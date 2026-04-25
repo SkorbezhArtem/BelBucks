@@ -9,7 +9,7 @@ interface NbrbRateResponse {
 
 export async function fetchNbrbBynPerTarget(currency: TargetCurrency): Promise<number> {
   const url = `https://www.nbrb.by/api/exrates/rates/${currency}?parammode=2`
-  const res = await fetch(url, { cache: 'no-store' })
+  const res = await fetch(url, { cache: 'no-store', redirect: 'follow' })
   if (!res.ok) throw new Error(`NBRB ${currency} fetch failed: ${res.status}`)
   const data = (await res.json()) as NbrbRateResponse
   const scale = data.Cur_Scale || 1

@@ -10,18 +10,24 @@ async function refreshRatesIfNeeded(force: boolean): Promise<void> {
   const existing = await getRatesCache()
   if (!force && existing && isRatesCacheFresh(existing)) return
 
-  const cache = await fetchRatesForSettings(settings)
-  await setRatesCache(cache)
+  try {
+    const cache = await fetchRatesForSettings(settings)
+    await setRatesCache(cache)
+  } catch (e) {
+    // Network/API may temporarily fail (e.g. NBRB outage). Keep the last known cache.
+    // Avoid unhandled promise rejections in the MV3 service worker.
+    console.warn('BelBucks: rates refresh failed', e)
+  }
 }
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: 60 })
-  void refreshRatesIfNeeded(true)
+  void refreshRatesIfNeeded(true).catch(() => {})
 })
 
 chrome.alarms.onAlarm.addListener((alarm: chrome.alarms.Alarm) => {
   if (alarm.name !== ALARM_NAME) return
-  void refreshRatesIfNeeded(false)
+  void refreshRatesIfNeeded(false).catch(() => {})
 })
 
 chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
