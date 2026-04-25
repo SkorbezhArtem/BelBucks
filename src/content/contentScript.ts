@@ -292,18 +292,30 @@ function scan(root: ParentNode) {
   const candidates = Array.from(candidateSet)
   const leafCandidates = candidates.filter((el) => !candidates.some((other) => other !== el && el.contains(other)))
   const trackedBynValues: number[] = []
+  const trackedPrimaryValues: number[] = []
   for (const el of leafCandidates) {
     if (preset?.excludeSelectors?.some((sel) => el.closest(sel))) continue
     const byn = applyToElement(el, forceAssumeByn)
-    if (byn != null) trackedBynValues.push(byn)
+    if (byn != null) {
+      trackedBynValues.push(byn)
+      const isPrimary = (preset?.trackerPrimarySelectors ?? []).some((sel) => {
+        try {
+          return el.matches(sel) || !!el.closest(sel)
+        } catch {
+          return false
+        }
+      })
+      if (isPrimary) trackedPrimaryValues.push(byn)
+    }
   }
 
   // Track one representative price per scan and suppress obvious outliers.
-  if (trackedBynValues.length > 0) {
-    trackedBynValues.sort((a, b) => a - b)
-    let representative = trackedBynValues[trackedBynValues.length - 1]
-    if (trackedBynValues.length >= 2) {
-      const second = trackedBynValues[trackedBynValues.length - 2]
+  const pool = trackedPrimaryValues.length > 0 ? trackedPrimaryValues : trackedBynValues
+  if (pool.length > 0) {
+    pool.sort((a, b) => a - b)
+    let representative = pool[pool.length - 1]
+    if (pool.length >= 2) {
+      const second = pool[pool.length - 2]
       if (representative > second * 10) representative = second
     }
     void recordPricePoint(location.href, document.title, representative)

@@ -2,6 +2,7 @@ export interface SitePreset {
   id: string
   match: (loc: Location) => boolean
   priceSelectors: string[]
+  trackerPrimarySelectors?: string[]
   excludeSelectors?: string[]
   mutationScopeSelector?: string
 }
@@ -38,6 +39,12 @@ const PRESETS: SitePreset[] = [
       '[data-price]',
       '[class*="price" i]',
     ],
+    trackerPrimarySelectors: [
+      '.product-aside__price',
+      '.product-aside__price--primary',
+      '.catalog-masthead__price',
+      '.schema-product__price',
+    ],
     excludeSelectors: ['[class*="installment" i]', '[class*="credit" i]'],
   },
   {
@@ -72,6 +79,7 @@ const PRESETS: SitePreset[] = [
       '[data-testid*="price" i]',
       '[class*="price" i]',
     ],
+    trackerPrimarySelectors: ['.g-price__current', '.price__current', '[class*="style_currentPrice__"]'],
     excludeSelectors: ['[class*="installment" i]', '[class*="credit" i]', '[class*="discount" i]'],
   },
   {
@@ -85,6 +93,7 @@ const PRESETS: SitePreset[] = [
       '[class*="cost" i]',
       '[data-price]',
     ],
+    trackerPrimarySelectors: ['.catalog_item_price .price', '.product_price .price'],
     excludeSelectors: ['[class*="installment" i]', '[class*="credit" i]', '[class*="discount" i]'],
   },
   {
@@ -100,6 +109,7 @@ const PRESETS: SitePreset[] = [
       '[class*="cost" i]',
       '[data-price]',
     ],
+    trackerPrimarySelectors: ['.catalog_item_price .price', '.catalog-item-price .price', '.product_price .price'],
     excludeSelectors: ['[class*="installment" i]', '[class*="credit" i]', '[class*="discount" i]'],
   },
   {
