@@ -161,3 +161,35 @@ export async function recordPricePoint(url: string, title: string, byn: number, 
   scheduleFlush()
 }
 
+export async function clearPriceHistoryForUrl(url: string): Promise<number> {
+  const cleanUrl = url.split('#')[0]
+  const store = await loadPriceHistory()
+  const next: PriceHistoryStore = { ...store }
+  let removed = 0
+
+  if (next[cleanUrl]) {
+    delete next[cleanUrl]
+    removed++
+  }
+
+  try {
+    const u = new URL(cleanUrl)
+    for (const key of Object.keys(next)) {
+      try {
+        const ku = new URL(key)
+        if (ku.origin === u.origin && ku.pathname === u.pathname) {
+          delete next[key]
+          removed++
+        }
+      } catch {
+        // ignore malformed keys
+      }
+    }
+  } catch {
+    // ignore malformed url
+  }
+
+  if (removed > 0) await savePriceHistory(next)
+  return removed
+}
+

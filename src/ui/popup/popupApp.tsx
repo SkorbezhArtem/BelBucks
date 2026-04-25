@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { PriceHistoryEntry } from '../../shared/priceTracker'
-import { loadPriceHistory } from '../../shared/priceTracker'
+import { clearPriceHistoryForUrl, loadPriceHistory } from '../../shared/priceTracker'
 import { getSettings, setSettings } from '../../shared/storage'
 import { isEnabledForSite, upsertHostRule } from '../../shared/siteRules'
 import type { RateProvider, TargetCurrency, UserSettings } from '../../shared/types'
@@ -61,6 +61,7 @@ export function PopupApp() {
   const [settings, setSettingsState] = useState<UserSettings | null>(null)
   const [status, setStatus] = useState('')
   const [activeHost, setActiveHost] = useState<string>('')
+  const [activeUrl, setActiveUrl] = useState<string>('')
 
   useEffect(() => {
     async function load() {
@@ -71,6 +72,7 @@ export function PopupApp() {
 
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
         const url = tab?.url
+        setActiveUrl(url ?? '')
         let host = ''
         try {
           host = url ? new URL(url).hostname : ''
@@ -129,6 +131,20 @@ export function PopupApp() {
       setStatus('Refresh failed')
     } finally {
       window.setTimeout(() => setStatus(''), 1500)
+    }
+  }
+
+  async function resetCurrentPageHistory() {
+    if (!activeUrl) return
+    setStatus('Clearing history…')
+    try {
+      const removed = await clearPriceHistoryForUrl(activeUrl)
+      setEntry(null)
+      setStatus(removed > 0 ? 'History cleared' : 'No history to clear')
+    } catch {
+      setStatus('Clear failed')
+    } finally {
+      window.setTimeout(() => setStatus(''), 1400)
     }
   }
 
@@ -256,6 +272,9 @@ export function PopupApp() {
             </button>
             <button className="bb-btn" type="button" onClick={() => void refreshRates()}>
               Обновить курс
+            </button>
+            <button className="bb-btn" type="button" onClick={() => void resetCurrentPageHistory()}>
+              Reset history
             </button>
             <button className="bb-btn" type="button" onClick={() => chrome.runtime.openOptionsPage()}>
               Полные настройки
