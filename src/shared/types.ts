@@ -58,8 +58,12 @@ export interface RatesCache {
   ttlMs: number
   /** 1 TARGET = X BYN */
   bynPerTarget: Record<TargetCurrency, number>
+  /** Actually used provider (may fallback from selected provider). */
   provider: RateProvider
+  /** Provider user selected in settings at fetch time. */
+  requestedProvider?: RateProvider
   bankId?: string
+  warning?: string
 }
 
 export interface ParsedPrice {

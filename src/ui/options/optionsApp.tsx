@@ -61,8 +61,14 @@ export function OptionsApp() {
   async function refreshRates() {
     setStatus('Refreshing rates…')
     try {
-      const res = (await chrome.runtime.sendMessage({ type: 'bb_refresh_rates' })) as { ok: boolean; error?: string }
-      setStatus(res.ok ? 'Rates refreshed.' : `Refresh failed: ${res.error ?? 'unknown error'}`)
+      const res = (await chrome.runtime.sendMessage({ type: 'bb_refresh_rates' })) as {
+        ok: boolean
+        warning?: string
+        error?: string
+      }
+      if (!res.ok) setStatus(`Refresh failed: ${res.error ?? 'unknown error'}`)
+      else if (res.warning) setStatus(`Rates refreshed with fallback: ${res.warning}`)
+      else setStatus('Rates refreshed.')
     } catch (e) {
       setStatus(`Refresh failed: ${String(e)}`)
     } finally {

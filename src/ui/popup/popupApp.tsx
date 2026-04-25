@@ -125,8 +125,14 @@ export function PopupApp() {
   async function refreshRates() {
     setStatus('Refreshing…')
     try {
-      const res = (await chrome.runtime.sendMessage({ type: 'bb_refresh_rates' })) as { ok: boolean; error?: string }
-      setStatus(res.ok ? 'Rates updated' : `Refresh failed`)
+      const res = (await chrome.runtime.sendMessage({ type: 'bb_refresh_rates' })) as {
+        ok: boolean
+        warning?: string
+        error?: string
+      }
+      if (!res.ok) setStatus(`Refresh failed`)
+      else if (res.warning) setStatus('Rates updated (fallback)')
+      else setStatus('Rates updated')
     } catch {
       setStatus('Refresh failed')
     } finally {
