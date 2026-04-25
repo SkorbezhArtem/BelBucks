@@ -119,16 +119,26 @@ function extractTextVariants(el: Element): string[] {
 }
 
 function extractSplitPriceVariant(el: Element): string | null {
-  // Typical structure: <div class="price">$0<i>198</i><i>00</i></div> + currency in ::after
-  const parts = Array.from(el.querySelectorAll(':scope > i'))
-    .map((n) => (n.textContent ?? '').replace(/[^\d]/g, ''))
-    .filter(Boolean)
-  if (parts.length < 2) return null
-  const major = parts[0] ?? ''
-  const minor = parts[1] ?? ''
-  if (!/^\d{1,6}$/.test(major)) return null
-  if (!/^\d{1,2}$/.test(minor)) return null
-  return `${major}.${minor.padEnd(2, '0').slice(0, 2)}`
+  // Build structural major/minor pair from direct child/text sequence.
+  // This handles patterns like: "451<sup>91</sup> бел. р." and "$0<i>198</i><i>00</i>".
+  const tokens: string[] = []
+  for (const node of Array.from(el.childNodes)) {
+    const raw =
+      node.nodeType === Node.TEXT_NODE ? node.textContent ?? '' : node.nodeType === Node.ELEMENT_NODE ? node.textContent ?? '' : ''
+    const t = raw.replace(/\s+/g, '').replace(/[^\d]/g, '')
+    if (t) tokens.push(t)
+  }
+  if (tokens.length < 2) return null
+
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const major = tokens[i] ?? ''
+    const minor = tokens[i + 1] ?? ''
+    if (!/^\d{1,6}$/.test(major)) continue
+    if (!/^\d{1,2}$/.test(minor)) continue
+    if (major === '0') continue
+    return `${major}.${minor.padEnd(2, '0').slice(0, 2)}`
+  }
+  return null
 }
 
 function shouldRunOnHost(host: string, s: UserSettings): boolean {
@@ -224,32 +234,34 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
 
   if (isRateWidgetContext(el, textVariants)) return null
 
-  let parsed = null as ReturnType<typeof parseBynPrice>
+  const parsedCandidates: number[] = []
+  let splitCandidate: number | null = null
   for (const rawText of textVariants) {
     const hasHint = hasCurrencyHint(rawText) || hasNearbyCurrencyHint(el)
     let candidate = parseBynPrice(rawText)
     if (!candidate && (hasHint || (forceAssumeByn && isSafeAssumeBynToken(rawText)))) {
       candidate = parseBynPrice(rawText, { assumeByn: true })
     }
-    // Skip tiny/placeholder values (e.g. "$0") and keep searching better variants.
-    if (candidate && candidate.byn >= 1) {
-      parsed = candidate
-      break
+    // Skip tiny/placeholder values (e.g. "$0") and impossible outliers.
+    if (candidate && candidate.byn >= 1 && candidate.byn <= 1_000_000) {
+      parsedCandidates.push(candidate.byn)
+      if (splitVariant && rawText === splitVariant) splitCandidate = candidate.byn
     }
   }
-  if (!parsed) return null
+  if (parsedCandidates.length === 0) return null
+  const parsedByn = splitCandidate ?? Math.max(...parsedCandidates)
 
   const rate = rates.bynPerTarget[settings.targetCurrency]
   if (!rate || !Number.isFinite(rate)) return null
 
-  const converted = convertBynToTarget(parsed.byn, rate, settings.markupPercent)
+  const converted = convertBynToTarget(parsedByn, rate, settings.markupPercent)
   const formattedPrimary = formatTargetCurrency(converted, settings.targetCurrency)
   let text = `≈ ${formattedPrimary}`
 
   if (settings.secondaryCurrency !== 'NONE' && settings.secondaryCurrency !== settings.targetCurrency) {
     const secondRate = rates.bynPerTarget[settings.secondaryCurrency]
     if (secondRate && Number.isFinite(secondRate)) {
-      const secondConverted = convertBynToTarget(parsed.byn, secondRate, settings.markupPercent)
+      const secondConverted = convertBynToTarget(parsedByn, secondRate, settings.markupPercent)
       const formattedSecondary = formatTargetCurrency(secondConverted, settings.secondaryCurrency)
       text = `≈ ${formattedPrimary} · ${formattedSecondary}`
     }
@@ -265,7 +277,7 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
   }
 
   PROCESSED.add(el)
-  return parsed.byn
+  return parsedByn
 }
 
 function scan(root: ParentNode) {
