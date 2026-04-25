@@ -9,6 +9,7 @@ let PROCESSED = new WeakSet<Element>()
 let settings: UserSettings | null = null
 let rates: RatesCache | null = null
 let badgeCounter = 0
+let observer: MutationObserver | null = null
 const PRICE_WITH_CURRENCY_RE = /\d[\d\s\u00A0\u202F]*(?:[.,]\d{1,2})?\s*(?:byn|бел\.?\s*руб|руб|р\.?|br|ƃ)/i
 
 function hasDigits(text: string): boolean {
@@ -243,7 +244,7 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
 }
 
 function scan(root: ParentNode) {
-  if (!settings) return
+  if (!settings || !settings.enabled) return
   const preset = getPresetForLocation(location)
   const forceAssumeByn = preset?.id === 'onliner' || preset?.id === 'shop' || preset?.id === '21vek'
   ensureStyles()
@@ -286,6 +287,7 @@ function scheduleScan() {
 
 async function init() {
   const s = await getSettings()
+  if (!s.enabled) return
   if (!shouldRunOnHost(location.hostname, s)) return
 
   settings = s
@@ -297,8 +299,8 @@ async function init() {
 
   scan(document)
 
-  const mo = new MutationObserver(() => scheduleScan())
-  mo.observe(document.documentElement, { childList: true, subtree: true })
+  observer = new MutationObserver(() => scheduleScan())
+  observer.observe(document.documentElement, { childList: true, subtree: true })
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'sync' && changes.bb_settings_v1) {
@@ -306,6 +308,20 @@ async function init() {
       const next = changes.bb_settings_v1.newValue as UserSettings
       settings = next
       applyVisualSettings()
+
+      // Toggle: stop all work when disabled.
+      if (!next.enabled) {
+        resetRenderedBadges()
+        observer?.disconnect()
+        observer = null
+        return
+      }
+
+      // Re-enable observer if it was previously disabled.
+      if (!observer) {
+        observer = new MutationObserver(() => scheduleScan())
+        observer.observe(document.documentElement, { childList: true, subtree: true })
+      }
 
       const requiresRatesRefresh =
         !prev ||
