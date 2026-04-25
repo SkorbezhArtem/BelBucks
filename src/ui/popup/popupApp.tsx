@@ -9,6 +9,27 @@ function formatTime(t: number): string {
   return new Date(t).toLocaleString()
 }
 
+function sanitizeDisplayPoints(points: { t: number; byn: number }[]): { t: number; byn: number }[] {
+  const base = points.filter((p) => Number.isFinite(p.byn) && p.byn >= 1)
+  if (base.length <= 1) return base
+
+  const out: { t: number; byn: number }[] = [base[0]]
+  for (let i = 1; i < base.length; i++) {
+    const prev = out[out.length - 1]
+    const cur = base[i]
+    if (!prev) {
+      out.push(cur)
+      continue
+    }
+    if (cur.byn > prev.byn * 8) {
+      const next = base[i + 1]
+      if (!next || cur.byn > next.byn * 6) continue
+    }
+    out.push(cur)
+  }
+  return out
+}
+
 function Sparkline({ points }: { points: { t: number; byn: number }[] }) {
   const path = useMemo(() => {
     if (points.length < 2) return ''
@@ -120,7 +141,8 @@ export function PopupApp() {
     { id: 'Custom', label: 'Custom' },
   ]
 
-  const last = entry?.points.at(-1)
+  const displayPoints = entry ? sanitizeDisplayPoints(entry.points) : []
+  const last = displayPoints.at(-1)
   const enabledForThisSite =
     settings && activeHost
       ? isEnabledForSite({
@@ -254,7 +276,7 @@ export function PopupApp() {
             <div>Последняя: {last.byn.toFixed(2)} BYN</div>
             <div>{formatTime(last.t)}</div>
           </div>
-          <Sparkline points={entry.points} />
+          <Sparkline points={displayPoints} />
         </div>
       )}
     </div>

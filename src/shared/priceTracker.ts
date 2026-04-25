@@ -23,12 +23,39 @@ let loadPromise: Promise<PriceHistoryStore> | null = null
 let flushTimer: number | null = null
 const pendingByUrl = new Map<string, { title: string; byn: number; now: number }>()
 
+function sanitizePoints(points: PricePoint[]): PricePoint[] {
+  const base = points.filter((p) => Number.isFinite(p.byn) && p.byn >= 1)
+  if (base.length <= 1) return base
+
+  const cleaned: PricePoint[] = [base[0]]
+  for (let i = 1; i < base.length; i++) {
+    const prev = cleaned[cleaned.length - 1]
+    const cur = base[i]
+    if (!prev) {
+      cleaned.push(cur)
+      continue
+    }
+
+    // Remove abrupt single-direction spikes, especially for the latest point.
+    if (cur.byn > prev.byn * 8) {
+      const next = base[i + 1]
+      if (!next || cur.byn > next.byn * 6) continue
+    }
+    cleaned.push(cur)
+  }
+  return cleaned
+}
+
 function clampStore(store: PriceHistoryStore): PriceHistoryStore {
   const entries = Object.values(store)
   entries.sort((a, b) => (b.points.at(-1)?.t ?? 0) - (a.points.at(-1)?.t ?? 0))
   const keep = entries.slice(0, MAX_ENTRIES)
   const next: PriceHistoryStore = {}
-  for (const e of keep) next[e.url] = e
+  for (const e of keep) {
+    const points = sanitizePoints(e.points).slice(-MAX_POINTS_PER_ENTRY)
+    if (points.length === 0) continue
+    next[e.url] = { ...e, points }
+  }
   return next
 }
 
@@ -38,9 +65,14 @@ export async function loadPriceHistory(): Promise<PriceHistoryStore> {
 
   loadPromise = chrome.storage.local.get(STORAGE_KEYS.priceHistory).then((obj) => {
     const loaded = (obj[STORAGE_KEYS.priceHistory] as PriceHistoryStore | undefined) ?? {}
-    storeCache = loaded
+    const sanitized = clampStore(loaded)
+    storeCache = sanitized
     loadPromise = null
-    return loaded
+    // Best-effort self-heal old noisy history in storage.
+    if (JSON.stringify(sanitized) !== JSON.stringify(loaded)) {
+      void chrome.storage.local.set({ [STORAGE_KEYS.priceHistory]: sanitized })
+    }
+    return sanitized
   })
 
   return loadPromise
@@ -49,8 +81,9 @@ export async function loadPriceHistory(): Promise<PriceHistoryStore> {
 async function loadPriceHistoryFresh(): Promise<PriceHistoryStore> {
   const obj = await chrome.storage.local.get(STORAGE_KEYS.priceHistory)
   const loaded = (obj[STORAGE_KEYS.priceHistory] as PriceHistoryStore | undefined) ?? {}
-  storeCache = loaded
-  return loaded
+  const sanitized = clampStore(loaded)
+  storeCache = sanitized
+  return sanitized
 }
 
 export async function savePriceHistory(store: PriceHistoryStore): Promise<void> {
