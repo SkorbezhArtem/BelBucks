@@ -157,9 +157,9 @@ export function PopupApp() {
   const currencyOptions: TargetCurrency[] = ['USD', 'EUR', 'PLN', 'RUB']
   const providerOptions: { id: RateProvider; label: string }[] = [
     { id: 'NBRB', label: 'НБРБ' },
-    { id: 'BankAverage', label: 'Средний по банкам' },
-    { id: 'BankBest', label: 'Лучший по банкам' },
-    { id: 'BankSpecific', label: 'Конкретный банк' },
+    { id: 'BankAverage', label: 'Средний по банкам (MVP feed)' },
+    { id: 'BankBest', label: 'Лучший по банкам (MVP feed)' },
+    { id: 'BankSpecific', label: 'Конкретный банк (MVP feed)' },
     { id: 'Custom', label: 'Custom' },
   ]
 
