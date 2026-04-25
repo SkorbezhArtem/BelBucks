@@ -72,7 +72,7 @@ const PRESETS: SitePreset[] = [
       '[data-testid*="price" i]',
       '[class*="price" i]',
     ],
-    excludeSelectors: ['[class*="installment" i]', '[class*="credit" i]'],
+    excludeSelectors: ['[class*="installment" i]', '[class*="credit" i]', '[class*="discount" i]'],
   },
   {
     id: 'wildberries',
