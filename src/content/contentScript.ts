@@ -127,8 +127,8 @@ function extractTextVariants(el: Element): string[] {
 }
 
 function extractSplitPriceVariant(el: Element): string | null {
-  // Build structural major/minor pair from direct child/text sequence.
-  // This handles patterns like: "451<sup>91</sup> бел. р." and "$0<i>198</i><i>00</i>".
+  // Build structural major/minor pair from local node sequence.
+  // Handles patterns like: "451<sup>91</sup> бел. р." and "$0<i>198</i><i>00</i>".
   const tokens: string[] = []
   for (const node of Array.from(el.childNodes)) {
     const raw =
@@ -136,17 +136,29 @@ function extractSplitPriceVariant(el: Element): string | null {
     const t = raw.replace(/\s+/g, '').replace(/[^\d]/g, '')
     if (t) tokens.push(t)
   }
+
+  // Fallback: some product pages nest integer/fractional parts in spans.
+  if (tokens.length < 2) {
+    const nested = Array.from(el.querySelectorAll('i, sup, sub, span, b, strong'))
+      .map((n) => (n.textContent ?? '').replace(/\s+/g, '').replace(/[^\d]/g, ''))
+      .filter(Boolean)
+    tokens.push(...nested)
+  }
   if (tokens.length < 2) return null
 
+  const candidates: string[] = []
   for (let i = 0; i < tokens.length - 1; i++) {
     const major = tokens[i] ?? ''
     const minor = tokens[i + 1] ?? ''
     if (!/^\d{1,6}$/.test(major)) continue
     if (!/^\d{1,2}$/.test(minor)) continue
     if (major === '0') continue
-    return `${major}.${minor.padEnd(2, '0').slice(0, 2)}`
+    candidates.push(`${major}.${minor.padEnd(2, '0').slice(0, 2)}`)
   }
-  return null
+  if (candidates.length === 0) return null
+  // Prefer the largest major part as likely "current price" over old/discount fragments.
+  candidates.sort((a, b) => Number(b.split('.')[0]) - Number(a.split('.')[0]))
+  return candidates[0] ?? null
 }
 
 function shouldRunOnHost(host: string, s: UserSettings): boolean {
