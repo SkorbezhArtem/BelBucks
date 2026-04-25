@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { PriceHistoryEntry } from '../../shared/priceTracker'
 import { loadPriceHistory } from '../../shared/priceTracker'
 import { getSettings, setSettings } from '../../shared/storage'
+import { isEnabledForSite, upsertHostRule } from '../../shared/siteRules'
 import type { RateProvider, TargetCurrency, UserSettings } from '../../shared/types'
 
 function formatTime(t: number): string {
@@ -38,6 +39,7 @@ export function PopupApp() {
   const [err, setErr] = useState<string>('')
   const [settings, setSettingsState] = useState<UserSettings | null>(null)
   const [status, setStatus] = useState('')
+  const [activeHost, setActiveHost] = useState<string>('')
 
   useEffect(() => {
     async function load() {
@@ -48,6 +50,13 @@ export function PopupApp() {
 
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
         const url = tab?.url
+        let host = ''
+        try {
+          host = url ? new URL(url).hostname : ''
+        } catch {
+          host = ''
+        }
+        setActiveHost(host)
         if (!url) {
           setEntry(null)
           return
@@ -112,12 +121,34 @@ export function PopupApp() {
   ]
 
   const last = entry?.points.at(-1)
+  const enabledForThisSite =
+    settings && activeHost
+      ? isEnabledForSite({
+          enabledGlobal: settings.enabled,
+          host: activeHost,
+          defaultMode: settings.siteDefaultMode,
+          rules: settings.siteRules,
+        })
+      : true
 
   return (
     <div className="bb-popup">
       <div className="bb-title">BelBucks</div>
       {settings ? (
         <div className="bb-popup-controls">
+          {activeHost ? (
+            <label className="bb-popup-line">
+              <span>Этот сайт</span>
+              <input
+                type="checkbox"
+                checked={!!enabledForThisSite}
+                onChange={(e) => {
+                  const nextRules = upsertHostRule(settings.siteRules, activeHost, e.target.checked ? 'allow' : 'block')
+                  void save({ ...settings, siteRules: nextRules })
+                }}
+              />
+            </label>
+          ) : null}
           <label className="bb-popup-line">
             <span>On</span>
             <input

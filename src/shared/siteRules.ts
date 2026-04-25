@@ -51,3 +51,11 @@ export function isEnabledForSite(params: {
   return params.defaultMode === 'enabledEverywhere'
 }
 
+export function upsertHostRule(rules: SiteRule[], host: string, mode: SiteRule['mode']): SiteRule[] {
+  const h = normalizeHost(host)
+  const next = rules.filter((r) => normalizePattern(r.pattern) !== h)
+  next.unshift({ pattern: h, mode })
+  return next
+}
+
+
