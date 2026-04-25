@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DEFAULT_SETTINGS, getSettings, setSettings } from '../../shared/storage'
 import { isEnabledForSite, removeRule, sortRulesForDisplay, upsertRule } from '../../shared/siteRules'
-import type { RateProvider, TargetCurrency, UserSettings } from '../../shared/types'
+import type { RateProvider, SiteVisualRule, TargetCurrency, UserSettings } from '../../shared/types'
 
 function splitLines(value: string): string[] {
   return value
@@ -22,6 +22,17 @@ export function OptionsApp() {
   const [newRulePattern, setNewRulePattern] = useState('')
   const [newRuleWildcard, setNewRuleWildcard] = useState(false)
   const [newRuleMode, setNewRuleMode] = useState<'allow' | 'block'>('allow')
+
+  const [newVisualPattern, setNewVisualPattern] = useState('')
+  const [newVisualWildcard, setNewVisualWildcard] = useState(false)
+  const [newVisualThemeMode, setNewVisualThemeMode] = useState<SiteVisualRule['themeMode']>('inherit')
+  const [newVisualOverrideColors, setNewVisualOverrideColors] = useState(false)
+  const [newVisualBg, setNewVisualBg] = useState('#7f8fff')
+  const [newVisualText, setNewVisualText] = useState('#0d1a46')
+  const [newVisualOverrideSize, setNewVisualOverrideSize] = useState(false)
+  const [newVisualFontPx, setNewVisualFontPx] = useState(12)
+  const [newVisualPadY, setNewVisualPadY] = useState(2)
+  const [newVisualPadX, setNewVisualPadX] = useState(8)
 
   useEffect(() => {
     void getSettings().then((settings) => {
@@ -69,6 +80,20 @@ export function OptionsApp() {
 
   const currencyOptions: TargetCurrency[] = ['USD', 'EUR', 'PLN', 'RUB']
   const displayRules = useMemo(() => sortRulesForDisplay(s.siteRules), [s.siteRules])
+  const displayVisualRules = useMemo(() => [...(s.siteVisualRules ?? [])], [s.siteVisualRules])
+
+  async function fillFromActiveTab(setter: (pattern: string) => void) {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      const url = tab?.url
+      if (!url) return
+      const host = new URL(url).hostname
+      if (!host) return
+      setter(host)
+    } catch {
+      // ignore
+    }
+  }
 
   return (
     <div className="bb-page">
@@ -184,6 +209,42 @@ export function OptionsApp() {
                   value={s.badgeTextColor}
                   disabled={s.badgeThemeMode === 'auto'}
                   onChange={(e) => void save({ ...s, badgeTextColor: e.target.value })}
+                />
+              </label>
+
+              <label className="bb-label">
+                <span>Размер текста (px)</span>
+                <input
+                  type="number"
+                  min={9}
+                  max={22}
+                  step={1}
+                  value={s.badgeFontSizePx}
+                  onChange={(e) => void save({ ...s, badgeFontSizePx: Number(e.target.value) })}
+                />
+              </label>
+
+              <label className="bb-label">
+                <span>Padding Y (px)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={16}
+                  step={1}
+                  value={s.badgePaddingYpx}
+                  onChange={(e) => void save({ ...s, badgePaddingYpx: Number(e.target.value) })}
+                />
+              </label>
+
+              <label className="bb-label">
+                <span>Padding X (px)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={24}
+                  step={1}
+                  value={s.badgePaddingXpx}
+                  onChange={(e) => void save({ ...s, badgePaddingXpx: Number(e.target.value) })}
                 />
               </label>
             </div>
@@ -394,6 +455,320 @@ export function OptionsApp() {
                 </div>
               </>
             ) : null}
+
+            <hr className="bb-hr" />
+
+            <div className="bb-row">
+              <div className="bb-muted">
+                Per-site visuals: можно включать Auto theme только на выбранных сайтах и задавать свои цвета/размеры.
+              </div>
+            </div>
+
+            <div className="bb-grid">
+              <div className="bb-label">
+                <span>Add visual override</span>
+                <div className="bb-row" style={{ gap: 8 }}>
+                  <select
+                    value={newVisualThemeMode ?? 'inherit'}
+                    onChange={(e) => setNewVisualThemeMode(e.target.value as SiteVisualRule['themeMode'])}
+                  >
+                    <option value="inherit">Inherit</option>
+                    <option value="manual">Manual</option>
+                    <option value="auto">Auto</option>
+                  </select>
+                  <input
+                    style={{ flex: 1, minWidth: 220 }}
+                    value={newVisualPattern}
+                    onChange={(e) => setNewVisualPattern(e.target.value)}
+                    placeholder="example.com"
+                  />
+                  <label className="bb-popup-line" style={{ minWidth: 140 }}>
+                    <span>*.subdomains</span>
+                    <input
+                      type="checkbox"
+                      checked={newVisualWildcard}
+                      onChange={(e) => setNewVisualWildcard(e.target.checked)}
+                    />
+                  </label>
+                  <button className="bb-btn" type="button" onClick={() => void fillFromActiveTab(setNewVisualPattern)}>
+                    Current site
+                  </button>
+                  <button
+                    className="bb-btn"
+                    type="button"
+                    onClick={() => {
+                      const base = newVisualPattern.trim()
+                      if (!base) return
+                      const pattern = newVisualWildcard ? `*.${base.replace(/^\*\.\s*/, '')}` : base
+                      const rule: SiteVisualRule = {
+                        pattern,
+                        themeMode: newVisualThemeMode ?? 'inherit',
+                        ...(newVisualOverrideColors ? { badgeBgColor: newVisualBg, badgeTextColor: newVisualText } : {}),
+                        ...(newVisualOverrideSize
+                          ? {
+                              badgeFontSizePx: newVisualFontPx,
+                              badgePaddingYpx: newVisualPadY,
+                              badgePaddingXpx: newVisualPadX,
+                            }
+                          : {}),
+                      }
+                      void save({ ...s, siteVisualRules: [rule, ...(s.siteVisualRules ?? [])] })
+                      setNewVisualPattern('')
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="bb-row" style={{ marginTop: 8 }}>
+                  <label className="bb-popup-line" style={{ minWidth: 180 }}>
+                    <span>Override colors</span>
+                    <input
+                      type="checkbox"
+                      checked={newVisualOverrideColors}
+                      onChange={(e) => setNewVisualOverrideColors(e.target.checked)}
+                    />
+                  </label>
+                  <input
+                    type="color"
+                    value={newVisualBg}
+                    disabled={!newVisualOverrideColors || newVisualThemeMode === 'auto'}
+                    onChange={(e) => setNewVisualBg(e.target.value)}
+                  />
+                  <input
+                    type="color"
+                    value={newVisualText}
+                    disabled={!newVisualOverrideColors || newVisualThemeMode === 'auto'}
+                    onChange={(e) => setNewVisualText(e.target.value)}
+                  />
+
+                  <label className="bb-popup-line" style={{ minWidth: 170 }}>
+                    <span>Override size</span>
+                    <input
+                      type="checkbox"
+                      checked={newVisualOverrideSize}
+                      onChange={(e) => setNewVisualOverrideSize(e.target.checked)}
+                    />
+                  </label>
+                  <input
+                    type="number"
+                    min={9}
+                    max={22}
+                    step={1}
+                    value={newVisualFontPx}
+                    disabled={!newVisualOverrideSize}
+                    onChange={(e) => setNewVisualFontPx(Number(e.target.value))}
+                    style={{ width: 90 }}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={16}
+                    step={1}
+                    value={newVisualPadY}
+                    disabled={!newVisualOverrideSize}
+                    onChange={(e) => setNewVisualPadY(Number(e.target.value))}
+                    style={{ width: 90 }}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={24}
+                    step={1}
+                    value={newVisualPadX}
+                    disabled={!newVisualOverrideSize}
+                    onChange={(e) => setNewVisualPadX(Number(e.target.value))}
+                    style={{ width: 90 }}
+                  />
+                </div>
+              </div>
+
+              <label className="bb-label">
+                <span>Quick check (host)</span>
+                <HostnameTester defaultMode={s.siteDefaultMode} rules={s.siteRules} enabledGlobal={s.enabled} />
+              </label>
+            </div>
+
+            <div className="bb-ruleTable" style={{ marginTop: 10 }}>
+              {displayVisualRules.length === 0 ? (
+                <div className="bb-muted" style={{ padding: 12 }}>
+                  No visual overrides yet.
+                </div>
+              ) : (
+                displayVisualRules.map((r, idx) => (
+                  <div className="bb-ruleRow" style={{ gridTemplateColumns: '120px 1fr 260px' }} key={`${r.pattern}:${idx}`}>
+                    <div>
+                      <span className="bb-pill">{(r.themeMode ?? 'inherit').toUpperCase()}</span>
+                    </div>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <div
+                        style={{
+                          fontFamily:
+                            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+                        }}
+                      >
+                        {r.pattern}
+                      </div>
+                      <div className="bb-row" style={{ gap: 8 }}>
+                        <select
+                          value={r.themeMode ?? 'inherit'}
+                          onChange={(e) => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            next[idx] = { ...next[idx], themeMode: e.target.value as SiteVisualRule['themeMode'] }
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                        >
+                          <option value="inherit">inherit</option>
+                          <option value="manual">manual</option>
+                          <option value="auto">auto</option>
+                        </select>
+                        <input
+                          type="color"
+                          value={r.badgeBgColor ?? s.badgeBgColor}
+                          disabled={(r.themeMode ?? 'inherit') === 'auto'}
+                          onChange={(e) => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            next[idx] = { ...next[idx], badgeBgColor: e.target.value }
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                        />
+                        <button
+                          className="bb-btn"
+                          type="button"
+                          onClick={() => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            const { badgeBgColor, ...rest } = next[idx]
+                            next[idx] = rest
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                          disabled={r.badgeBgColor == null}
+                        >
+                          Clear
+                        </button>
+
+                        <input
+                          type="color"
+                          value={r.badgeTextColor ?? s.badgeTextColor}
+                          disabled={(r.themeMode ?? 'inherit') === 'auto'}
+                          onChange={(e) => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            next[idx] = { ...next[idx], badgeTextColor: e.target.value }
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                        />
+                        <button
+                          className="bb-btn"
+                          type="button"
+                          onClick={() => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            const { badgeTextColor, ...rest } = next[idx]
+                            next[idx] = rest
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                          disabled={r.badgeTextColor == null}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <div className="bb-row" style={{ gap: 8 }}>
+                        <input
+                          type="number"
+                          min={9}
+                          max={22}
+                          step={1}
+                          value={r.badgeFontSizePx ?? s.badgeFontSizePx}
+                          onChange={(e) => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            next[idx] = { ...next[idx], badgeFontSizePx: Number(e.target.value) }
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                          style={{ width: 90 }}
+                        />
+                        <button
+                          className="bb-btn"
+                          type="button"
+                          onClick={() => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            const { badgeFontSizePx, ...rest } = next[idx]
+                            next[idx] = rest
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                          disabled={r.badgeFontSizePx == null}
+                        >
+                          Clear
+                        </button>
+
+                        <input
+                          type="number"
+                          min={0}
+                          max={16}
+                          step={1}
+                          value={r.badgePaddingYpx ?? s.badgePaddingYpx}
+                          onChange={(e) => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            next[idx] = { ...next[idx], badgePaddingYpx: Number(e.target.value) }
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                          style={{ width: 90 }}
+                        />
+                        <button
+                          className="bb-btn"
+                          type="button"
+                          onClick={() => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            const { badgePaddingYpx, ...rest } = next[idx]
+                            next[idx] = rest
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                          disabled={r.badgePaddingYpx == null}
+                        >
+                          Clear
+                        </button>
+
+                        <input
+                          type="number"
+                          min={0}
+                          max={24}
+                          step={1}
+                          value={r.badgePaddingXpx ?? s.badgePaddingXpx}
+                          onChange={(e) => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            next[idx] = { ...next[idx], badgePaddingXpx: Number(e.target.value) }
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                          style={{ width: 90 }}
+                        />
+                        <button
+                          className="bb-btn"
+                          type="button"
+                          onClick={() => {
+                            const next = [...(s.siteVisualRules ?? [])]
+                            const { badgePaddingXpx, ...rest } = next[idx]
+                            next[idx] = rest
+                            void save({ ...s, siteVisualRules: next })
+                          }}
+                          disabled={r.badgePaddingXpx == null}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                    <div className="bb-row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                      <button
+                        className="bb-btn bb-btnDanger"
+                        type="button"
+                        onClick={() => {
+                          const next = [...(s.siteVisualRules ?? [])]
+                          next.splice(idx, 1)
+                          void save({ ...s, siteVisualRules: next })
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </main>
