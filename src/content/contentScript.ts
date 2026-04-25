@@ -67,7 +67,7 @@ function isVisibleElement(el: Element): boolean {
   return true
 }
 
-function collectTextFallbackCandidates(root: ParentNode, maxCount = 400): Element[] {
+function collectTextFallbackCandidates(root: ParentNode, maxCount = 500): Element[] {
   const out: Element[] = []
   const seen = new Set<Element>()
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
