@@ -2,6 +2,7 @@ import { convertBynToTarget, formatTargetCurrency } from '../shared/converter'
 import { parseBynPrice } from '../shared/priceParser'
 import { recordPricePoint } from '../shared/priceTracker'
 import { getRatesCache, getSettings } from '../shared/storage'
+import { isEnabledForSite } from '../shared/siteRules'
 import type { RatesCache, UserSettings } from '../shared/types'
 import { getPresetForLocation } from './presets.ts'
 
@@ -107,10 +108,12 @@ function extractTextVariants(el: Element): string[] {
 }
 
 function shouldRunOnHost(host: string, s: UserSettings): boolean {
-  const h = host.toLowerCase()
-  if (s.blacklistDomains.some((d) => d.toLowerCase() === h)) return false
-  if (s.useWhitelistOnly) return s.whitelistDomains.some((d) => d.toLowerCase() === h)
-  return true
+  return isEnabledForSite({
+    enabledGlobal: s.enabled,
+    host,
+    defaultMode: s.siteDefaultMode,
+    rules: s.siteRules,
+  })
 }
 
 function ensureStyles() {

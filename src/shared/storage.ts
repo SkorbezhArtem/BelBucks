@@ -1,4 +1,6 @@
 import type { RatesCache, UserSettings } from './types'
+import type { SiteRule } from './types'
+import { normalizeHost } from './siteRules'
 
 export const STORAGE_KEYS = {
   settings: 'bb_settings_v1',
@@ -16,6 +18,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   badgeThemeMode: 'manual',
   badgeBgColor: '#7f8fff',
   badgeTextColor: '#0d1a46',
+  siteDefaultMode: 'enabledEverywhere',
+  siteRules: [],
   useWhitelistOnly: false,
   whitelistDomains: [],
   blacklistDomains: [],
@@ -33,7 +37,25 @@ let lastPersistedSerialized = ''
 export async function getSettings(): Promise<UserSettings> {
   const obj = await chrome.storage.sync.get(STORAGE_KEYS.settings)
   const stored = obj[STORAGE_KEYS.settings] as Partial<UserSettings> | undefined
-  const merged = { ...DEFAULT_SETTINGS, ...(stored ?? {}) }
+  let merged = { ...DEFAULT_SETTINGS, ...(stored ?? {}) }
+
+  // One-time-ish migration: legacy whitelist/blacklist -> flexible site rules.
+  if (!stored?.siteRules || !stored?.siteDefaultMode) {
+    const rules: SiteRule[] = []
+    const blacklist = stored?.blacklistDomains ?? merged.blacklistDomains
+    const whitelist = stored?.whitelistDomains ?? merged.whitelistDomains
+    const useWhitelistOnly = stored?.useWhitelistOnly ?? merged.useWhitelistOnly
+
+    for (const d of blacklist) rules.push({ pattern: normalizeHost(d), mode: 'block' })
+    for (const d of whitelist) rules.push({ pattern: normalizeHost(d), mode: 'allow' })
+
+    merged = {
+      ...merged,
+      siteDefaultMode: useWhitelistOnly ? 'disabledEverywhere' : 'enabledEverywhere',
+      siteRules: rules,
+    }
+  }
+
   lastPersistedSerialized = JSON.stringify(merged)
   return merged
 }

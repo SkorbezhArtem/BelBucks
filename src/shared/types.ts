@@ -5,6 +5,14 @@ export type RateProvider = 'NBRB' | 'BankAverage' | 'BankBest' | 'BankSpecific' 
 export type DisplayMode = 'inline' | 'tooltip'
 export type BadgeThemeMode = 'manual' | 'auto'
 
+export type SiteDefaultMode = 'enabledEverywhere' | 'disabledEverywhere'
+
+export interface SiteRule {
+  /** Examples: "av.by", "*.onliner.by", "catalog.onliner.by" */
+  pattern: string
+  mode: 'allow' | 'block'
+}
+
 export interface UserSettings {
   enabled: boolean
   targetCurrency: TargetCurrency
@@ -17,6 +25,12 @@ export interface UserSettings {
   badgeThemeMode: BadgeThemeMode
   badgeBgColor: string
   badgeTextColor: string
+
+  /** New flexible per-site switching */
+  siteDefaultMode: SiteDefaultMode
+  siteRules: SiteRule[]
+
+  /** Legacy (kept for migration/backward compatibility) */
   useWhitelistOnly: boolean
   whitelistDomains: string[]
   blacklistDomains: string[]
