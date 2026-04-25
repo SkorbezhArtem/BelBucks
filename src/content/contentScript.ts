@@ -46,6 +46,14 @@ function isSafeAssumeBynToken(text: string): boolean {
   return true
 }
 
+function isMinorOnlyFragment(text: string): boolean {
+  const t = text.replace(/\s+/g, ' ').trim()
+  // Fragments like ",43" / ".43" / "43 к." must not be treated as standalone BYN prices.
+  if (/^[^\d]*[.,]\s*\d{1,2}[^\d]*$/.test(t)) return true
+  if (/^\d{1,2}[^\d]*$/.test(t) && !/(byn|бел|руб|р\.?|br|ƃ)/i.test(t)) return true
+  return false
+}
+
 function isRateWidgetContext(el: Element, textVariants: string[]): boolean {
   const own = (el.textContent ?? '').toLowerCase()
   const parent = (el.parentElement?.textContent ?? '').toLowerCase()
@@ -237,6 +245,7 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
   const parsedCandidates: number[] = []
   let splitCandidate: number | null = null
   for (const rawText of textVariants) {
+    if (isMinorOnlyFragment(rawText) && rawText !== splitVariant) continue
     const hasHint = hasCurrencyHint(rawText) || hasNearbyCurrencyHint(el)
     let candidate = parseBynPrice(rawText)
     if (!candidate && (hasHint || (forceAssumeByn && isSafeAssumeBynToken(rawText)))) {
