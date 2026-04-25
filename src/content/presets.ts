@@ -88,6 +88,21 @@ const PRESETS: SitePreset[] = [
     excludeSelectors: ['[class*="installment" i]', '[class*="credit" i]', '[class*="discount" i]'],
   },
   {
+    id: 'newton',
+    match: (loc) => /(^|\.)newton\.by$/i.test(loc.hostname),
+    priceSelectors: [
+      '.catalog_item_price .price',
+      '.catalog-item-price .price',
+      '.product_price .price',
+      '.product-price .price',
+      '.price',
+      '[class*="price" i]',
+      '[class*="cost" i]',
+      '[data-price]',
+    ],
+    excludeSelectors: ['[class*="installment" i]', '[class*="credit" i]', '[class*="discount" i]'],
+  },
+  {
     id: 'wildberries',
     match: (loc) => /(^|\.)wildberries\.by$/i.test(loc.hostname),
     priceSelectors: [

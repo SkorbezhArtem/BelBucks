@@ -247,7 +247,12 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
 function scan(root: ParentNode) {
   if (!settings || !settings.enabled) return
   const preset = getPresetForLocation(location)
-  const forceAssumeByn = preset?.id === 'onliner' || preset?.id === 'shop' || preset?.id === '21vek' || preset?.id === '7745'
+  const forceAssumeByn =
+    preset?.id === 'onliner' ||
+    preset?.id === 'shop' ||
+    preset?.id === '21vek' ||
+    preset?.id === '7745' ||
+    preset?.id === 'newton'
   ensureStyles()
   applyVisualSettings()
 
