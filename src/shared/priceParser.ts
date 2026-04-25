@@ -71,7 +71,7 @@ export function parseBynPrice(text: string, options?: { assumeByn?: boolean }): 
 
   // Heuristic: parse first number token and assume it's BYN if context looks like BYN
   // (We’ll strengthen this later with site presets / context signals.)
-  const currencyHint = /(byn|br|руб|бел\.?\s*руб|(^|\s)р\.?($|\s)|ƃ)/i.test(raw)
+  const currencyHint = /(byn|br|руб|бел\.?\s*(?:руб|р)\.?|(^|\s)р\.?($|\s)|ƃ)/i.test(raw)
   if (!currencyHint && !options?.assumeByn) return null
 
   const numMatch = raw.match(/(\d[\d\s\u00A0\u202F.,'’]*)/)

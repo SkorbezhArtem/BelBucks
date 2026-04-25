@@ -26,5 +26,9 @@ describe('parseBynPrice', () => {
   it('parses Onliner-style currency symbol', () => {
     expect(parseBynPrice('от 1105,60 ƃ')?.byn).toBeCloseTo(1105.6, 6)
   })
+
+  it('parses "бел. р." hint', () => {
+    expect(parseBynPrice('1635,25 бел. р.')?.byn).toBeCloseTo(1635.25, 6)
+  })
 })
 

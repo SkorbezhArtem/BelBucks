@@ -12,14 +12,14 @@ let settings: UserSettings | null = null
 let rates: RatesCache | null = null
 let badgeCounter = 0
 let observer: MutationObserver | null = null
-const PRICE_WITH_CURRENCY_RE = /\d[\d\s\u00A0\u202F]*(?:[.,]\d{1,2})?\s*(?:byn|бел\.?\s*руб|руб|р\.?|br|ƃ)/i
+const PRICE_WITH_CURRENCY_RE = /\d[\d\s\u00A0\u202F]*(?:[.,]\d{1,2})?\s*(?:byn|бел\.?\s*(?:руб|р)\.?|руб|р\.?|br|ƃ)/i
 
 function hasDigits(text: string): boolean {
   return /\d/.test(text)
 }
 
 function hasCurrencyHint(text: string): boolean {
-  return /(byn|бел\.?\s*руб|руб|br|(^|\s)р\.?($|\s)|ƃ)/i.test(text)
+  return /(byn|бел\.?\s*(?:руб|р)\.?|руб|br|(^|\s)р\.?($|\s)|ƃ)/i.test(text)
 }
 
 function isLikelyPriceToken(text: string): boolean {
