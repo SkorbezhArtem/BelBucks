@@ -1,0 +1,26 @@
+{
+  "name": "belbucks",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && node scripts/build-extension.mjs",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.40",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "esbuild": "^0.25.5",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.10",
+    "vitest": "^3.2.4"
+  }
+}

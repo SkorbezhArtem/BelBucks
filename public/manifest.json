@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "BelBucks",
+  "description": "Automatic BYN → foreign currency conversion on Belarusian marketplaces.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "BelBucks",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "serviceWorker.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "alarms", "activeTab"],
+  "host_permissions": ["https://www.nbrb.by/*", "https://belarusbank.by/*"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+
