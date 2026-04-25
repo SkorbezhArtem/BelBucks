@@ -18,7 +18,7 @@ export function resolveVisualSettingsForHost(settings: UserSettings, host: strin
   themeMode: BadgeThemeMode
   rule: SiteVisualRule | null
 } {
-  const rule = resolveSiteRule(settings.siteVisualRules as any, host) as unknown as SiteVisualRule | null
+  const rule = resolveSiteRule(settings.siteVisualRules, host)
 
   const themeMode: BadgeThemeMode =
     rule?.themeMode && rule.themeMode !== 'inherit' ? rule.themeMode : settings.badgeThemeMode

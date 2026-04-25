@@ -30,7 +30,7 @@ function specificity(pattern: string): number {
   return wildcardPenalty + p.length
 }
 
-export function resolveSiteRule(rules: SiteRule[], host: string): SiteRule | null {
+export function resolveSiteRule<T extends { pattern: string }>(rules: T[], host: string): T | null {
   const matched = rules.filter((r) => matchesHost(r.pattern, host))
   if (matched.length === 0) return null
   matched.sort((a, b) => specificity(b.pattern) - specificity(a.pattern))
