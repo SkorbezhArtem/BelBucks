@@ -25,6 +25,9 @@ BelBucks — браузерное расширение (Chrome / Edge, Manifest 
 - `BankSpecific` (MVP-режим через доступный банковский фид).
 - `Custom` (ручной курс).
 
+> Сейчас банковские режимы в MVP работают поверх агрегированного фида Belarusbank.
+> Если фид временно недоступен, BelBucks делает fallback на NBRB и показывает предупреждение в UI.
+
 ### Кастомизация
 - Основная и вторая валюта (`USD`, `EUR`, `PLN`, `RUB`).
 - Наценка банка (`-5% ... +10%`).
@@ -41,6 +44,8 @@ BelBucks — браузерное расширение (Chrome / Edge, Manifest 
 
 - `kufar.by`
 - `onliner.by` / `catalog.onliner.by`
+- `newton.by`
+- `7745.by`
 - `shop.by`
 - `21vek.by`
 - `wildberries.by`
@@ -59,6 +64,24 @@ BelBucks — браузерное расширение (Chrome / Edge, Manifest 
 - `chrome.storage.sync` (пользовательские настройки)
 - `chrome.storage.local` (кэш курсов, история цен)
 - `MutationObserver` (реакция на динамическую подгрузку)
+- строгий TypeScript (`"strict": true`)
+
+## Разрешения (Manifest V3)
+
+BelBucks запрашивает:
+
+- `storage` — хранение пользовательских настроек и кэша (курсы/история).
+- `alarms` — фоновое расписание обновления курсов.
+- `activeTab` — быстрые действия popup для активной вкладки.
+
+Host permissions:
+
+- `https://www.nbrb.by/*` — официальный API курсов.
+- `https://belarusbank.by/*` — агрегированный банковский фид для MVP режимов.
+
+Content script scope:
+
+- `<all_urls>` — нужно для поиска цен в BYN на пользовательских сайтах.
 
 ## Структура проекта
 
@@ -68,6 +91,7 @@ BelBucks — браузерное расширение (Chrome / Edge, Manifest 
 - `src/shared/priceParser.ts` — парсер цен в BYN.
 - `src/shared/converter.ts` — конвертация и форматирование.
 - `src/shared/rates/` — провайдеры курсов.
+- `src/shared/rates/ratesService.ts` — единый контракт провайдеров + fallback.
 - `src/shared/storage.ts` — чтение/запись настроек и кэша.
 - `src/shared/priceTracker.ts` — логика трекера цены.
 - `src/ui/options/` — полноценные настройки.
@@ -98,7 +122,9 @@ npm run build
 ## Команды
 
 - `npm run build` — production build.
+- `npm run typecheck` — строгая проверка TypeScript.
 - `npm test` — запуск unit-тестов (`vitest`).
+- `npm run test:coverage` — тесты с coverage-отчетом.
 
 ## API курсов (MVP)
 
@@ -108,7 +134,7 @@ npm run build
 - Банковский фид (используется в MVP-режимах BankAverage/BankBest):  
   `https://belarusbank.by/api/kursExchange?city=...`
 
-> Примечание: в текущем MVP режимы “по банкам” реализованы через доступный агрегированный банковский фид. Позже можно подключить отдельные адаптеры для нескольких источников (включая Myfin) в рамках того же слоя провайдеров.
+> Примечание: в текущем MVP режимы “по банкам” реализованы через агрегированный банковский фид (это еще не полноценная multi-bank интеграция). Позже можно подключить отдельные адаптеры для нескольких источников (включая Myfin) в рамках того же слоя провайдеров.
 
 ## Поведение в реальном времени
 
@@ -123,6 +149,13 @@ npm run build
 - На некоторых сайтах с очень нестабильным DOM могут требоваться дополнительные точечные селекторы.
 - Price Tracker в MVP сохраняет “репрезентативную” цену страницы (а не отдельный трек по каждому товару в листинге).
 - Часть банковских режимов пока опирается на общий фид, а не на полноценный мульти-агрегатор.
+
+## Архитектура сборки (MV3)
+
+- `vite` собирает HTML-страницы UI (`options.html`, `popup.html`).
+- `esbuild` собирает скрипты в нужных форматах для MV3:
+  - `contentScript.ts` -> IIFE (`dist/contentScript.js`)
+  - `serviceWorker.ts` -> ESM (`dist/serviceWorker.js`)
 
 ## Troubleshooting
 
@@ -147,4 +180,14 @@ npm run build
 - Расширенный visual customizer (размер, прозрачность, шаблоны тем).
 - Полноценный selector builder (“выбери цену на странице”).
 - Дополнительные источники банковских курсов и выбор конкретного банка через отдельный адаптер.
+
+## Процесс разработки
+
+- CI (`.github/workflows/ci.yml`) на push/PR запускает:
+  - `npm ci`
+  - `npm run typecheck`
+  - `npm test`
+  - `npm run build`
+- Гайд для контрибьюторов: `CONTRIBUTING.md`.
+- Лицензия: `MIT` (`LICENSE`).
 

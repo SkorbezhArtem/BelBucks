@@ -25,6 +25,9 @@ The project is focused on Belarusian marketplaces and listing websites, with str
 - `BankSpecific` (MVP mode via available bank feed).
 - `Custom` (manual rate).
 
+> Bank-based modes are currently backed by an aggregated Belarusbank feed in MVP.
+> If that feed is unavailable, BelBucks falls back to NBRB and shows a warning in UI.
+
 ### Customization
 - Primary and secondary currency (`USD`, `EUR`, `PLN`, `RUB`).
 - Bank markup adjustment (`-5% ... +10%`).
@@ -41,6 +44,8 @@ The project is focused on Belarusian marketplaces and listing websites, with str
 
 - `kufar.by`
 - `onliner.by` / `catalog.onliner.by`
+- `newton.by`
+- `7745.by`
 - `shop.by`
 - `21vek.by`
 - `wildberries.by`
@@ -59,6 +64,24 @@ The architecture is extensible: new site presets can be added without rewriting 
 - `chrome.storage.sync` (user settings)
 - `chrome.storage.local` (rates cache, price history)
 - `MutationObserver` (dynamic content handling)
+- strict TypeScript mode (`"strict": true`)
+
+## Permissions (Manifest V3)
+
+BelBucks requests:
+
+- `storage` — persist user settings and local rates/tracker cache.
+- `alarms` — schedule periodic rates refresh in background.
+- `activeTab` — quick site toggles and popup context actions for current tab.
+
+Host permissions:
+
+- `https://www.nbrb.by/*` — official exchange rate API.
+- `https://belarusbank.by/*` — MVP aggregated bank feed used by bank modes.
+
+Content script scope:
+
+- `<all_urls>` — required for BYN price detection across user-visited pages.
 
 ## Project Structure
 
@@ -68,6 +91,7 @@ The architecture is extensible: new site presets can be added without rewriting 
 - `src/shared/priceParser.ts` — BYN price parser.
 - `src/shared/converter.ts` — conversion + formatting.
 - `src/shared/rates/` — rate providers.
+- `src/shared/rates/ratesService.ts` — provider adapter contract + fallback logic.
 - `src/shared/storage.ts` — settings/cache read-write layer.
 - `src/shared/priceTracker.ts` — price tracker logic.
 - `src/ui/options/` — full settings UI.
@@ -98,7 +122,9 @@ Output is generated in `dist/`.
 ## Commands
 
 - `npm run build` — production build.
+- `npm run typecheck` — strict TypeScript validation.
 - `npm test` — run unit tests (`vitest`).
+- `npm run test:coverage` — run tests with coverage report.
 
 ## Rate APIs (MVP)
 
@@ -108,7 +134,7 @@ Output is generated in `dist/`.
 - Bank feed used for `BankAverage` / `BankBest` in MVP:
   `https://belarusbank.by/api/kursExchange?city=...`
 
-> Note: in the current MVP, bank-based modes are implemented on top of an available aggregated bank feed. Additional adapters (including Myfin-like sources) can be added through the same provider layer.
+> Note: in the current MVP, bank-based modes are implemented on top of an available aggregated bank feed (not full multi-bank integration yet). Additional adapters (including Myfin-like sources) can be added through the same provider layer.
 
 ## Real-Time Behavior
 
@@ -123,6 +149,13 @@ Output is generated in `dist/`.
 - Some websites with highly unstable DOM may still require targeted selectors.
 - Price Tracker currently stores one representative page price (not separate per-item list tracking).
 - Part of bank-source behavior is still based on shared feeds, not full multi-aggregator integration.
+
+## Build Architecture (MV3)
+
+- `vite` builds HTML UI entries (`options.html`, `popup.html`).
+- `esbuild` builds scripts with MV3-required formats:
+  - `contentScript.ts` -> IIFE (`dist/contentScript.js`)
+  - `serviceWorker.ts` -> ESM (`dist/serviceWorker.js`)
 
 ## Troubleshooting
 
@@ -147,4 +180,14 @@ Output is generated in `dist/`.
 - Enhanced visual customizer (size, opacity, style presets).
 - Selector builder ("pick a price on page").
 - More bank-rate adapters and explicit bank selection.
+
+## Development Process
+
+- CI workflow (`.github/workflows/ci.yml`) runs on push/PR:
+  - `npm ci`
+  - `npm run typecheck`
+  - `npm test`
+  - `npm run build`
+- Contribution guide: see `CONTRIBUTING.md`.
+- License: `MIT` (`LICENSE`).
 
