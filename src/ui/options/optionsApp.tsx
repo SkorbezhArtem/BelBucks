@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DEFAULT_SETTINGS, getSettings, setSettings } from '../../shared/storage'
+import { isEnabledForSite } from '../../shared/siteRules'
 import type { RateProvider, TargetCurrency, UserSettings } from '../../shared/types'
 
 function splitLines(value: string): string[] {
@@ -251,9 +252,77 @@ export function OptionsApp() {
                 />
               </label>
             </div>
+
+            <hr className="bb-hr" />
+
+            <div className="bb-muted" style={{ marginBottom: 8 }}>
+              Per-site rules (new): default mode + allow/block patterns. Legacy whitelist/blacklist are still shown above for
+              now.
+            </div>
+
+            <div className="bb-grid">
+              <label className="bb-label">
+                <span>Default behavior</span>
+                <select
+                  value={s.siteDefaultMode}
+                  onChange={(e) => void save({ ...s, siteDefaultMode: e.target.value as UserSettings['siteDefaultMode'] })}
+                >
+                  <option value="enabledEverywhere">Enabled everywhere</option>
+                  <option value="disabledEverywhere">Disabled everywhere</option>
+                </select>
+              </label>
+              <div />
+              <label className="bb-label">
+                <span>Rules (one pattern per line; prefix with "!" to block)</span>
+                <textarea
+                  rows={8}
+                  value={joinLines(
+                    s.siteRules.map((r) => (r.mode === 'block' ? `!${r.pattern}` : r.pattern))
+                  )}
+                  onChange={(e) => {
+                    const lines = splitLines(e.target.value)
+                    const nextRules = lines.map((ln) => {
+                      const isBlock = ln.startsWith('!')
+                      const pattern = (isBlock ? ln.slice(1) : ln).trim()
+                      return { pattern, mode: isBlock ? 'block' : 'allow' } as const
+                    })
+                    void save({ ...s, siteRules: nextRules })
+                  }}
+                />
+              </label>
+              <label className="bb-label">
+                <span>Quick check (type a hostname)</span>
+                <HostnameTester
+                  defaultMode={s.siteDefaultMode}
+                  rules={s.siteRules}
+                  enabledGlobal={s.enabled}
+                />
+              </label>
+            </div>
           </div>
         )}
       </main>
+    </div>
+  )
+}
+
+function HostnameTester(props: {
+  enabledGlobal: boolean
+  defaultMode: UserSettings['siteDefaultMode']
+  rules: UserSettings['siteRules']
+}) {
+  const [host, setHost] = useState('catalog.onliner.by')
+  const enabled = isEnabledForSite({
+    enabledGlobal: props.enabledGlobal,
+    host,
+    defaultMode: props.defaultMode,
+    rules: props.rules,
+  })
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="example.com" />
+      <div className="bb-muted">Result: {enabled ? 'ENABLED' : 'DISABLED'}</div>
     </div>
   )
 }
