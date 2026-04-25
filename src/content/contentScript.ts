@@ -105,6 +105,17 @@ function extractTextVariants(el: Element): string[] {
     if (t) variants.add(t)
   }
 
+  // Some local shops split price as <i>198</i><i>00</i> and keep currency in ::after.
+  // Build a synthetic decimal variant so parser doesn't see only "$0" placeholders.
+  const parts = Array.from(el.querySelectorAll('i'))
+    .map((n) => (n.textContent ?? '').replace(/[^\d]/g, ''))
+    .filter(Boolean)
+  if (parts.length >= 2 && parts[0].length >= 1 && parts[1].length >= 1) {
+    variants.add(`${parts[0]}.${parts[1].slice(0, 2)}`)
+  } else if (parts.length >= 1) {
+    variants.add(parts[0])
+  }
+
   return Array.from(variants).filter((s) => s.length <= 80)
 }
 
@@ -192,15 +203,17 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
 
   let parsed = null as ReturnType<typeof parseBynPrice>
   for (const rawText of textVariants) {
-    parsed = parseBynPrice(rawText)
-    if (!parsed && (forceAssumeByn || hasNearbyCurrencyHint(el))) {
-      parsed = parseBynPrice(rawText, { assumeByn: true })
+    let candidate = parseBynPrice(rawText)
+    if (!candidate && (forceAssumeByn || hasNearbyCurrencyHint(el))) {
+      candidate = parseBynPrice(rawText, { assumeByn: true })
     }
-    if (parsed) break
+    // Skip tiny/placeholder values (e.g. "$0") and keep searching better variants.
+    if (candidate && candidate.byn >= 1) {
+      parsed = candidate
+      break
+    }
   }
   if (!parsed) return null
-  // Guard against converting counters / tiny incidental values.
-  if (parsed.byn < 1) return null
 
   const rate = rates.bynPerTarget[settings.targetCurrency]
   if (!rate || !Number.isFinite(rate)) return null
@@ -234,7 +247,7 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
 function scan(root: ParentNode) {
   if (!settings || !settings.enabled) return
   const preset = getPresetForLocation(location)
-  const forceAssumeByn = preset?.id === 'onliner' || preset?.id === 'shop' || preset?.id === '21vek'
+  const forceAssumeByn = preset?.id === 'onliner' || preset?.id === 'shop' || preset?.id === '21vek' || preset?.id === '7745'
   ensureStyles()
   applyVisualSettings()
 
