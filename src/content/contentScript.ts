@@ -36,6 +36,16 @@ function isLikelyPriceToken(text: string): boolean {
   return true
 }
 
+function isSafeAssumeBynToken(text: string): boolean {
+  const t = text.replace(/\s+/g, ' ').trim()
+  const digitsOnly = t.replace(/\D/g, '')
+  // Avoid phone/article-like long numeric blobs when currency hint is absent.
+  if (digitsOnly.length >= 9) return false
+  if (/\+?\d[\d\s().-]{8,}/.test(t) && !/[.,]\d{1,2}\b/.test(t)) return false
+  if (/(артикул|код|sku|id)/i.test(t)) return false
+  return true
+}
+
 function isRateWidgetContext(el: Element, textVariants: string[]): boolean {
   const own = (el.textContent ?? '').toLowerCase()
   const parent = (el.parentElement?.textContent ?? '').toLowerCase()
@@ -203,8 +213,9 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
 
   let parsed = null as ReturnType<typeof parseBynPrice>
   for (const rawText of textVariants) {
+    const hasHint = hasCurrencyHint(rawText) || hasNearbyCurrencyHint(el)
     let candidate = parseBynPrice(rawText)
-    if (!candidate && (forceAssumeByn || hasNearbyCurrencyHint(el))) {
+    if (!candidate && (hasHint || (forceAssumeByn && isSafeAssumeBynToken(rawText)))) {
       candidate = parseBynPrice(rawText, { assumeByn: true })
     }
     // Skip tiny/placeholder values (e.g. "$0") and keep searching better variants.
@@ -267,18 +278,22 @@ function scan(root: ParentNode) {
 
   const candidates = Array.from(candidateSet)
   const leafCandidates = candidates.filter((el) => !candidates.some((other) => other !== el && el.contains(other)))
-  let bestTrackedByn: number | null = null
+  const trackedBynValues: number[] = []
   for (const el of leafCandidates) {
     if (preset?.excludeSelectors?.some((sel) => el.closest(sel))) continue
     const byn = applyToElement(el, forceAssumeByn)
-    if (byn != null && (bestTrackedByn == null || byn > bestTrackedByn)) {
-      bestTrackedByn = byn
-    }
+    if (byn != null) trackedBynValues.push(byn)
   }
 
-  // Track one representative price per scan to avoid noisy history.
-  if (bestTrackedByn != null) {
-    void recordPricePoint(location.href, document.title, bestTrackedByn)
+  // Track one representative price per scan and suppress obvious outliers.
+  if (trackedBynValues.length > 0) {
+    trackedBynValues.sort((a, b) => a - b)
+    let representative = trackedBynValues[trackedBynValues.length - 1]
+    if (trackedBynValues.length >= 2) {
+      const second = trackedBynValues[trackedBynValues.length - 2]
+      if (representative > second * 10) representative = second
+    }
+    void recordPricePoint(location.href, document.title, representative)
   }
 }
 
