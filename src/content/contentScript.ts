@@ -161,6 +161,48 @@ function extractSplitPriceVariant(el: Element): string | null {
   return candidates[0] ?? null
 }
 
+function extractSiblingMinorVariant(el: Element): string | null {
+  const majorText = (el.textContent ?? '').replace(/\s+/g, '').trim()
+  if (!/^\d{1,6}$/.test(majorText)) return null
+
+  const siblingCandidates: Element[] = []
+  if (el.nextElementSibling) siblingCandidates.push(el.nextElementSibling)
+
+  const parent = el.parentElement
+  if (parent) {
+    const scoped = parent.querySelector('.h_flx_nsh.h_txt_hdl, .h_txt_hdl')
+    if (scoped && scoped !== el && !siblingCandidates.includes(scoped)) siblingCandidates.push(scoped)
+  }
+
+  let minor = ''
+  for (const cand of siblingCandidates) {
+    const txt = (cand.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const m = txt.match(/(^|[^\d])(\d{1,2})\s*(?:б|б\.|byn|руб|р\.?|br|ƃ)?\b/)
+    if (m?.[2]) {
+      minor = m[2]
+      break
+    }
+  }
+
+  if (!/^\d{1,2}$/.test(minor)) return null
+
+  return `${majorText}.${minor.padEnd(2, '0').slice(0, 2)}`
+}
+
+function findPriceRenderAnchor(el: Element): Element {
+  const next = el.nextElementSibling
+  if (next) {
+    const txt = (next.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+    if (
+      next.matches('.h_flx_nsh.h_txt_hdl, .h_txt_hdl') &&
+      /(^|[^\d])\d{1,2}\s*(?:б|б\.|byn|руб|р\.?|br|ƃ)?\b/.test(txt)
+    ) {
+      return next
+    }
+  }
+  return el
+}
+
 function shouldRunOnHost(host: string, s: UserSettings): boolean {
   return isEnabledForSite({
     enabledGlobal: s.enabled,
@@ -238,7 +280,7 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
   if ((el as HTMLElement).dataset.bbBadge === '1') return null
   if (el.closest('[data-bb-badge="1"]')) return null
 
-  const splitVariant = extractSplitPriceVariant(el)
+  const splitVariant = extractSplitPriceVariant(el) ?? extractSiblingMinorVariant(el)
   let textVariants = extractTextVariants(el).filter(isLikelyPriceToken)
   if (splitVariant) {
     textVariants = [
@@ -294,7 +336,8 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
       el.setAttribute('title', `${currentTitle ? currentTitle + '\n' : ''}BelBucks: ${text}`)
     }
   } else {
-    renderInline(el, text)
+    const anchor = findPriceRenderAnchor(el)
+    renderInline(anchor, text)
   }
 
   PROCESSED.add(el)
