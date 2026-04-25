@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DEFAULT_SETTINGS, getSettings, setSettings } from '../../shared/storage'
-import { isEnabledForSite } from '../../shared/siteRules'
+import { isEnabledForSite, removeRule, sortRulesForDisplay, upsertRule } from '../../shared/siteRules'
 import type { RateProvider, TargetCurrency, UserSettings } from '../../shared/types'
 
 function splitLines(value: string): string[] {
@@ -18,6 +18,10 @@ export function OptionsApp() {
   const [loaded, setLoaded] = useState(false)
   const [s, setS] = useState<UserSettings>(DEFAULT_SETTINGS)
   const [status, setStatus] = useState<string>('')
+  const [showLegacy, setShowLegacy] = useState(false)
+  const [newRulePattern, setNewRulePattern] = useState('')
+  const [newRuleWildcard, setNewRuleWildcard] = useState(false)
+  const [newRuleMode, setNewRuleMode] = useState<'allow' | 'block'>('allow')
 
   useEffect(() => {
     void getSettings().then((settings) => {
@@ -64,6 +68,7 @@ export function OptionsApp() {
   ]
 
   const currencyOptions: TargetCurrency[] = ['USD', 'EUR', 'PLN', 'RUB']
+  const displayRules = useMemo(() => sortRulesForDisplay(s.siteRules), [s.siteRules])
 
   return (
     <div className="bb-page">
@@ -225,39 +230,10 @@ export function OptionsApp() {
 
             <hr className="bb-hr" />
 
-            <div className="bb-grid">
-              <label className="bb-label">
-                <span>Работать только по whitelist</span>
-                <input
-                  type="checkbox"
-                  checked={s.useWhitelistOnly}
-                  onChange={(e) => void save({ ...s, useWhitelistOnly: e.target.checked })}
-                />
-              </label>
-              <div />
-              <label className="bb-label">
-                <span>Whitelist (1 домен на строку)</span>
-                <textarea
-                  rows={6}
-                  value={joinLines(s.whitelistDomains)}
-                  onChange={(e) => void save({ ...s, whitelistDomains: splitLines(e.target.value) })}
-                />
-              </label>
-              <label className="bb-label">
-                <span>Blacklist (1 домен на строку)</span>
-                <textarea
-                  rows={6}
-                  value={joinLines(s.blacklistDomains)}
-                  onChange={(e) => void save({ ...s, blacklistDomains: splitLines(e.target.value) })}
-                />
-              </label>
-            </div>
-
-            <hr className="bb-hr" />
-
-            <div className="bb-muted" style={{ marginBottom: 8 }}>
-              Per-site rules (new): default mode + allow/block patterns. Legacy whitelist/blacklist are still shown above for
-              now.
+            <div className="bb-row">
+              <div className="bb-muted">
+                Пер-сайтовое управление: default + правила (поддержка `*.domain`). Это заменяет старые whitelist/blacklist.
+              </div>
             </div>
 
             <div className="bb-grid">
@@ -272,24 +248,44 @@ export function OptionsApp() {
                 </select>
               </label>
               <div />
-              <label className="bb-label">
-                <span>Rules (one pattern per line; prefix with "!" to block)</span>
-                <textarea
-                  rows={8}
-                  value={joinLines(
-                    s.siteRules.map((r) => (r.mode === 'block' ? `!${r.pattern}` : r.pattern))
-                  )}
-                  onChange={(e) => {
-                    const lines = splitLines(e.target.value)
-                    const nextRules = lines.map((ln) => {
-                      const isBlock = ln.startsWith('!')
-                      const pattern = (isBlock ? ln.slice(1) : ln).trim()
-                      return { pattern, mode: isBlock ? 'block' : 'allow' } as const
-                    })
-                    void save({ ...s, siteRules: nextRules })
-                  }}
-                />
-              </label>
+
+              <div className="bb-label">
+                <span>Add rule</span>
+                <div className="bb-row" style={{ gap: 8 }}>
+                  <select value={newRuleMode} onChange={(e) => setNewRuleMode(e.target.value as 'allow' | 'block')}>
+                    <option value="allow">Allow</option>
+                    <option value="block">Block</option>
+                  </select>
+                  <input
+                    style={{ flex: 1, minWidth: 220 }}
+                    value={newRulePattern}
+                    onChange={(e) => setNewRulePattern(e.target.value)}
+                    placeholder="example.com"
+                  />
+                  <label className="bb-popup-line" style={{ minWidth: 140 }}>
+                    <span>*.subdomains</span>
+                    <input
+                      type="checkbox"
+                      checked={newRuleWildcard}
+                      onChange={(e) => setNewRuleWildcard(e.target.checked)}
+                    />
+                  </label>
+                  <button
+                    className="bb-btn"
+                    type="button"
+                    onClick={() => {
+                      const base = newRulePattern.trim()
+                      if (!base) return
+                      const pattern = newRuleWildcard ? `*.${base.replace(/^\*\.\s*/, '')}` : base
+                      void save({ ...s, siteRules: upsertRule(s.siteRules, { pattern, mode: newRuleMode }) })
+                      setNewRulePattern('')
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
               <label className="bb-label">
                 <span>Quick check (type a hostname)</span>
                 <HostnameTester
@@ -299,6 +295,105 @@ export function OptionsApp() {
                 />
               </label>
             </div>
+
+            <div className="bb-ruleTable" style={{ marginTop: 10 }}>
+              {displayRules.length === 0 ? (
+                <div className="bb-muted" style={{ padding: 12 }}>
+                  No rules yet.
+                </div>
+              ) : (
+                displayRules.map((r) => (
+                  <div className="bb-ruleRow" key={`${r.mode}:${r.pattern}`}>
+                    <div>
+                      <span className={`bb-pill ${r.mode === 'allow' ? 'bb-pillAllow' : 'bb-pillBlock'}`}>
+                        {r.mode === 'allow' ? 'ALLOW' : 'BLOCK'}
+                      </span>
+                    </div>
+                    <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace' }}>
+                      {r.pattern}
+                    </div>
+                    <div className="bb-row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                      <button
+                        className="bb-btn"
+                        type="button"
+                        onClick={() => void save({ ...s, siteRules: upsertRule(s.siteRules, { pattern: r.pattern, mode: 'allow' }) })}
+                      >
+                        Allow
+                      </button>
+                      <button
+                        className="bb-btn"
+                        type="button"
+                        onClick={() => void save({ ...s, siteRules: upsertRule(s.siteRules, { pattern: r.pattern, mode: 'block' }) })}
+                      >
+                        Block
+                      </button>
+                      <button
+                        className="bb-btn bb-btnDanger"
+                        type="button"
+                        onClick={() => void save({ ...s, siteRules: removeRule(s.siteRules, r.pattern) })}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="bb-row" style={{ marginTop: 10 }}>
+              <button className="bb-btn" type="button" onClick={() => setShowLegacy((v) => !v)}>
+                {showLegacy ? 'Hide legacy lists' : 'Show legacy whitelist/blacklist'}
+              </button>
+              <button
+                className="bb-btn"
+                type="button"
+                onClick={() => {
+                  const rules = [
+                    ...s.blacklistDomains.map((d) => ({ pattern: d.trim(), mode: 'block' as const })),
+                    ...s.whitelistDomains.map((d) => ({ pattern: d.trim(), mode: 'allow' as const })),
+                  ]
+                  if (rules.length === 0) return
+                  let next = s.siteRules
+                  for (const rr of rules) next = upsertRule(next, rr)
+                  void save({ ...s, siteRules: next })
+                }}
+              >
+                Import legacy into rules
+              </button>
+            </div>
+
+            {showLegacy ? (
+              <>
+                <hr className="bb-hr" />
+                <div className="bb-grid">
+                  <label className="bb-label">
+                    <span>Работать только по whitelist (legacy)</span>
+                    <input
+                      type="checkbox"
+                      checked={s.useWhitelistOnly}
+                      onChange={(e) => void save({ ...s, useWhitelistOnly: e.target.checked })}
+                    />
+                  </label>
+                  <div />
+                  <label className="bb-label">
+                    <span>Whitelist (1 домен на строку, legacy)</span>
+                    <textarea
+                      rows={6}
+                      value={joinLines(s.whitelistDomains)}
+                      onChange={(e) => void save({ ...s, whitelistDomains: splitLines(e.target.value) })}
+                    />
+                  </label>
+                  <label className="bb-label">
+                    <span>Blacklist (1 домен на строку, legacy)</span>
+                    <textarea
+                      rows={6}
+                      value={joinLines(s.blacklistDomains)}
+                      onChange={(e) => void save({ ...s, blacklistDomains: splitLines(e.target.value) })}
+                    />
+                  </label>
+                </div>
+              </>
+            ) : null}
           </div>
         )}
       </main>

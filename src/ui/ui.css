@@ -142,6 +142,55 @@ input[type='range'] {
   line-height: 1.45;
 }
 
+.bb-ruleTable {
+  border: 1px solid var(--bb-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bb-ruleRow {
+  display: grid;
+  grid-template-columns: 120px 1fr 160px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid var(--bb-border);
+}
+
+.bb-ruleRow:first-child {
+  border-top: none;
+}
+
+.bb-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--bb-border);
+  font-size: 12px;
+  color: var(--bb-muted);
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.bb-pillAllow {
+  background: rgba(0, 200, 120, 0.14);
+  color: rgba(200, 255, 220, 0.92);
+}
+
+.bb-pillBlock {
+  background: rgba(255, 80, 80, 0.14);
+  color: rgba(255, 210, 210, 0.92);
+}
+
+.bb-btnDanger {
+  background: rgba(255, 80, 80, 0.12);
+}
+
+.bb-btnDanger:hover {
+  background: rgba(255, 80, 80, 0.18);
+}
+
 .bb-popup {
   width: 320px;
   padding: 12px;

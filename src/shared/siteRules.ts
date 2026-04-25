@@ -58,4 +58,21 @@ export function upsertHostRule(rules: SiteRule[], host: string, mode: SiteRule['
   return next
 }
 
+export function upsertRule(rules: SiteRule[], rule: SiteRule): SiteRule[] {
+  const p = normalizePattern(rule.pattern)
+  if (!p) return rules
+  const next = rules.filter((r) => normalizePattern(r.pattern) !== p)
+  next.unshift({ pattern: p, mode: rule.mode })
+  return next
+}
+
+export function removeRule(rules: SiteRule[], pattern: string): SiteRule[] {
+  const p = normalizePattern(pattern)
+  return rules.filter((r) => normalizePattern(r.pattern) !== p)
+}
+
+export function sortRulesForDisplay(rules: SiteRule[]): SiteRule[] {
+  return [...rules].sort((a, b) => specificity(b.pattern) - specificity(a.pattern))
+}
+
 
