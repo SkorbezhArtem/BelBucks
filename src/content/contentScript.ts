@@ -115,18 +115,20 @@ function extractTextVariants(el: Element): string[] {
     if (t) variants.add(t)
   }
 
-  // Some local shops split price as <i>198</i><i>00</i> and keep currency in ::after.
-  // Build a synthetic decimal variant so parser doesn't see only "$0" placeholders.
-  const parts = Array.from(el.querySelectorAll('i'))
+  return Array.from(variants).filter((s) => s.length <= 80)
+}
+
+function extractSplitPriceVariant(el: Element): string | null {
+  // Typical structure: <div class="price">$0<i>198</i><i>00</i></div> + currency in ::after
+  const parts = Array.from(el.querySelectorAll(':scope > i'))
     .map((n) => (n.textContent ?? '').replace(/[^\d]/g, ''))
     .filter(Boolean)
-  if (parts.length >= 2 && parts[0].length >= 1 && parts[1].length >= 1) {
-    variants.add(`${parts[0]}.${parts[1].slice(0, 2)}`)
-  } else if (parts.length >= 1) {
-    variants.add(parts[0])
-  }
-
-  return Array.from(variants).filter((s) => s.length <= 80)
+  if (parts.length < 2) return null
+  const major = parts[0] ?? ''
+  const minor = parts[1] ?? ''
+  if (!/^\d{1,6}$/.test(major)) return null
+  if (!/^\d{1,2}$/.test(minor)) return null
+  return `${major}.${minor.padEnd(2, '0').slice(0, 2)}`
 }
 
 function shouldRunOnHost(host: string, s: UserSettings): boolean {
@@ -206,7 +208,18 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
   if ((el as HTMLElement).dataset.bbBadge === '1') return null
   if (el.closest('[data-bb-badge="1"]')) return null
 
-  const textVariants = extractTextVariants(el).filter(isLikelyPriceToken)
+  const splitVariant = extractSplitPriceVariant(el)
+  let textVariants = extractTextVariants(el).filter(isLikelyPriceToken)
+  if (splitVariant) {
+    textVariants = [
+      splitVariant,
+      ...textVariants.filter((v) => {
+        const compact = v.replace(/\s+/g, '')
+        // Drop known placeholder-like concatenations such as "$019800".
+        return !/^\$?0\d{4,}$/.test(compact)
+      }),
+    ]
+  }
   if (textVariants.length === 0) return null
 
   if (isRateWidgetContext(el, textVariants)) return null
