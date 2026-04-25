@@ -13,6 +13,19 @@ export interface SiteRule {
   mode: 'allow' | 'block'
 }
 
+export type SiteVisualThemeMode = 'inherit' | 'manual' | 'auto'
+
+export interface SiteVisualRule {
+  /** Examples: "av.by", "*.onliner.by", "catalog.onliner.by" */
+  pattern: string
+  themeMode?: SiteVisualThemeMode
+  badgeBgColor?: string
+  badgeTextColor?: string
+  badgeFontSizePx?: number
+  badgePaddingYpx?: number
+  badgePaddingXpx?: number
+}
+
 export interface UserSettings {
   enabled: boolean
   targetCurrency: TargetCurrency
@@ -25,10 +38,14 @@ export interface UserSettings {
   badgeThemeMode: BadgeThemeMode
   badgeBgColor: string
   badgeTextColor: string
+  badgeFontSizePx: number
+  badgePaddingYpx: number
+  badgePaddingXpx: number
 
   /** New flexible per-site switching */
   siteDefaultMode: SiteDefaultMode
   siteRules: SiteRule[]
+  siteVisualRules: SiteVisualRule[]
 
   /** Legacy (kept for migration/backward compatibility) */
   useWhitelistOnly: boolean

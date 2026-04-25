@@ -3,6 +3,7 @@ import { parseBynPrice } from '../shared/priceParser'
 import { recordPricePoint } from '../shared/priceTracker'
 import { getRatesCache, getSettings } from '../shared/storage'
 import { isEnabledForSite } from '../shared/siteRules'
+import { resolveVisualSettingsForHost } from '../shared/siteVisual'
 import type { RatesCache, UserSettings } from '../shared/types'
 import { getPresetForLocation } from './presets.ts'
 
@@ -125,13 +126,13 @@ function ensureStyles() {
   display:inline-flex !important;
   align-items:center;
   margin-left:.45em;
-  padding:.12em .5em;
+  padding:calc(var(--bb-badge-pad-y, 2px) * 1px) calc(var(--bb-badge-pad-x, 8px) * 1px);
   border-radius:999px;
   border:1px solid color-mix(in srgb, var(--bb-badge-bg, #7f8fff) 85%, #000 15%);
   background:var(--bb-badge-bg, #7f8fff);
   color:var(--bb-badge-text, #0d1a46);
   font-weight:700;
-  font-size:.86em;
+  font-size:calc(var(--bb-badge-font, 12px) * 1px);
   line-height:1.25;
   white-space:nowrap;
   width:auto !important;
@@ -147,28 +148,12 @@ function ensureStyles() {
 
 function applyVisualSettings() {
   if (!settings) return
-  let bg = settings.badgeBgColor
-  let text = settings.badgeTextColor
-
-  if (settings.badgeThemeMode === 'auto') {
-    const host = location.hostname.toLowerCase()
-    if (/(^|\.)av\.by$/.test(host)) {
-      bg = '#4f86ff'
-      text = '#f5f9ff'
-    } else if (/(^|\.)onliner\.by$/.test(host) || /(^|\.)catalog\.onliner\.by$/.test(host)) {
-      bg = '#ffd449'
-      text = '#2f2a10'
-    } else if (/(^|\.)21vek\.by$/.test(host)) {
-      bg = '#ff4da2'
-      text = '#fff4fb'
-    } else {
-      bg = '#7f8fff'
-      text = '#0d1a46'
-    }
-  }
-
-  document.documentElement.style.setProperty('--bb-badge-bg', bg)
-  document.documentElement.style.setProperty('--bb-badge-text', text)
+  const v = resolveVisualSettingsForHost(settings, location.hostname)
+  document.documentElement.style.setProperty('--bb-badge-bg', v.bg)
+  document.documentElement.style.setProperty('--bb-badge-text', v.text)
+  document.documentElement.style.setProperty('--bb-badge-font', String(v.fontSizePx))
+  document.documentElement.style.setProperty('--bb-badge-pad-y', String(v.paddingYpx))
+  document.documentElement.style.setProperty('--bb-badge-pad-x', String(v.paddingXpx))
 }
 
 function resetRenderedBadges() {
@@ -314,6 +299,14 @@ async function init() {
 
       // Toggle: stop all work when disabled.
       if (!next.enabled) {
+        resetRenderedBadges()
+        observer?.disconnect()
+        observer = null
+        return
+      }
+
+      // Per-site rules: stop all work if host is blocked.
+      if (!shouldRunOnHost(location.hostname, next)) {
         resetRenderedBadges()
         observer?.disconnect()
         observer = null
