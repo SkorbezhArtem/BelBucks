@@ -1,4 +1,5 @@
 import { convertBynToTarget, formatTargetCurrency } from '../shared/converter'
+import { hasNonBynMarker } from '../shared/currencyMarkers'
 import { parseBynPrice } from '../shared/priceParser'
 import { recordPricePoint } from '../shared/priceTracker'
 import { getRatesCache, getSettings } from '../shared/storage'
@@ -77,6 +78,23 @@ function hasNearbyCurrencyHint(el: Element): boolean {
   if (hasCurrencyHint(prev)) return true
   const next = el.nextElementSibling?.textContent ?? ''
   return hasCurrencyHint(next)
+}
+
+function hasNearbyNonBynMarker(el: Element): boolean {
+  // Look up to 3 ancestors and the immediate sibling pair so we catch markers
+  // that sit next to the price node (e.g. $-prices on kufar with the symbol
+  // rendered in a sibling span).
+  const own = el.textContent ?? ''
+  if (hasNonBynMarker(own)) return true
+  let cur: Element | null = el.parentElement
+  for (let i = 0; cur && i < 3; i++) {
+    if (hasNonBynMarker(cur.textContent ?? '')) return true
+    cur = cur.parentElement
+  }
+  const prev = el.previousElementSibling?.textContent ?? ''
+  if (hasNonBynMarker(prev)) return true
+  const next = el.nextElementSibling?.textContent ?? ''
+  return hasNonBynMarker(next)
 }
 
 function isVisibleElement(el: Element): boolean {
@@ -279,6 +297,11 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
   if (!isVisibleElement(el)) return null
   if ((el as HTMLElement).dataset.bbBadge === '1') return null
   if (el.closest('[data-bb-badge="1"]')) return null
+
+  // Don't touch obvious foreign-currency cells (kufar dollar listings, RUB
+  // marketplaces, etc.). Markers must be unambiguous (€, $, ₽, USD…); the
+  // parser handles inline ones, this catches DOM-context ones.
+  if (hasNearbyNonBynMarker(el)) return null
 
   const splitVariant = extractSplitPriceVariant(el) ?? extractSiblingMinorVariant(el)
   let textVariants = extractTextVariants(el).filter(isLikelyPriceToken)
