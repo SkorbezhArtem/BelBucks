@@ -1,3 +1,4 @@
+import { hasNonBynMarker } from './currencyMarkers'
 import type { ParsedPrice } from './types'
 
 const SPACE_CHARS = /[\s\u00A0\u202F]/g
@@ -60,6 +61,10 @@ function parseLocalizedNumber(raw: string): number | null {
 export function parseBynPrice(text: string, options?: { assumeByn?: boolean }): ParsedPrice | null {
   const raw = normalizeText(text)
   const lower = raw.toLowerCase()
+
+  // Hard refuse strings that carry an explicit non-BYN currency marker.
+  // This pre-empts assumeByn so a "$60" never becomes 60 BYN on a noisy page.
+  if (hasNonBynMarker(raw)) return null
 
   // "коп." / "копеек" — treat as BYN cents
   const kopMatch = lower.match(/(\d[\d\s\u00A0\u202F.,'’]*)\s*(коп|коп\.|копеек|копейки)/)
