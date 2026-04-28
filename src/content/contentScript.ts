@@ -127,6 +127,31 @@ function isVisibleElement(el: Element): boolean {
   return true
 }
 
+const OLD_PRICE_CLASS_RE = /(^|[\s_-])(old|original|was|crossed|strik|prev|previous|discount-from|old[-_]?price|old[-_]?cost|стар(ая|ой|ую)|зач[её]ркн)/i
+
+function isCrossedOutOrOldPrice(el: Element): boolean {
+  // (a) Wrapping legacy strike-through tags.
+  if (el.closest('s, del, strike')) return true
+  // (b) CSS line-through anywhere up the tree (handles flexbox layouts where the
+  //     <s> got replaced with a span + style).
+  let cur: Element | null = el
+  for (let i = 0; cur && i < 6; i++) {
+    const cs = getComputedStyle(cur as HTMLElement)
+    if (cs.textDecorationLine && /line-through/.test(cs.textDecorationLine)) return true
+    cur = cur.parentElement
+  }
+  // (c) Class names that hint "old / was / crossed" — covers the common
+  //     framework patterns plus localized Russian "старая цена" classes.
+  cur = el
+  for (let i = 0; cur && i < 4; i++) {
+    const cls = (cur as HTMLElement).className
+    const classStr = typeof cls === 'string' ? cls : (cur as HTMLElement).getAttribute?.('class') ?? ''
+    if (typeof classStr === 'string' && OLD_PRICE_CLASS_RE.test(classStr)) return true
+    cur = cur.parentElement
+  }
+  return false
+}
+
 function collectTextFallbackCandidates(root: ParentNode, maxCount = 500): Element[] {
   const out: Element[] = []
   const seen = new Set<Element>()
@@ -323,6 +348,10 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
   // marketplaces, etc.). Markers must be unambiguous (€, $, ₽, USD…); the
   // parser handles inline ones, this catches DOM-context ones.
   if (hasNearbyNonBynMarker(el)) return null
+
+  // Skip the old / crossed-out price so we don't render a long "X · ≈ Y"
+  // string that pushes the badge off-screen on narrow listings.
+  if (isCrossedOutOrOldPrice(el)) return null
 
   const splitVariant = extractSplitPriceVariant(el) ?? extractSiblingMinorVariant(el)
   let textVariants = extractTextVariants(el).filter(isLikelyPriceToken)
