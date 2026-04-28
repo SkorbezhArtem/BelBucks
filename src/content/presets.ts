@@ -1,3 +1,10 @@
+export interface PriceRange {
+  /** Minimum BYN amount that should be considered a real price on this host. */
+  min: number
+  /** Maximum BYN amount allowed before we treat the value as garbage / out of category. */
+  max: number
+}
+
 export interface SitePreset {
   id: string
   match: (loc: Location) => boolean
@@ -5,6 +12,36 @@ export interface SitePreset {
   trackerPrimarySelectors?: string[]
   excludeSelectors?: string[]
   mutationScopeSelector?: string
+
+  /**
+   * Selectors that point at the *old / crossed-out* price. Anything matched here
+   * is skipped during conversion and never recorded by the tracker.
+   */
+  oldPriceSelectors?: string[]
+
+  /**
+   * Single, canonical selector for the current product price on a product detail
+   * page. The tracker only records when this selector matches exactly one node.
+   */
+  productPriceSelector?: string
+
+  /**
+   * Returns true if the current Location points at a product detail page (vs.
+   * listing / category). Used to gate price-history recording.
+   */
+  isProductPage?: (loc: Location) => boolean
+
+  /**
+   * Per-host BYN range. When set, replaces the default global cap.
+   * Real estate / cars need a much wider window than electronics.
+   */
+  priceRange?: PriceRange
+
+  /**
+   * Force-treat any matched price as BYN even when no inline currency hint
+   * is present (used on hosts where the markup never spells out the unit).
+   */
+  forceAssumeByn?: boolean
 }
 
 const PRESETS: SitePreset[] = [
