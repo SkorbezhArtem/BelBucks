@@ -6,7 +6,13 @@ import { getRatesCache, getSettings } from '../shared/storage'
 import { isEnabledForSite } from '../shared/siteRules'
 import { resolveVisualSettingsForHost } from '../shared/siteVisual'
 import type { RatesCache, UserSettings } from '../shared/types'
+import type { PriceRange } from './presets.ts'
 import { getPresetForLocation } from './presets.ts'
+
+// Sane defaults for hosts where we have no preset. Lower than the previous
+// 1_000_000 BYN ceiling because real-estate / cars on .by easily clear it,
+// but still high enough to filter out absurd values from broken parses.
+const DEFAULT_PRICE_RANGE: PriceRange = { min: 0.01, max: 100_000_000 }
 
 let PROCESSED = new WeakSet<Element>()
 let settings: UserSettings | null = null
@@ -337,7 +343,7 @@ function renderInline(el: Element, text: string) {
   el.insertAdjacentElement('afterend', span)
 }
 
-function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
+function applyToElement(el: Element, forceAssumeByn: boolean, priceRange: PriceRange): number | null {
   if (!settings || !rates) return null
   if (PROCESSED.has(el)) return null
   if (!isVisibleElement(el)) return null
@@ -378,8 +384,9 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
     if (!candidate && (hasHint || (forceAssumeByn && isSafeAssumeBynToken(rawText)))) {
       candidate = parseBynPrice(rawText, { assumeByn: true })
     }
-    // Skip tiny/placeholder values (e.g. "$0") and impossible outliers.
-    if (candidate && candidate.byn >= 1 && candidate.byn <= 1_000_000) {
+    // Per-host range. Defaults are wide enough for av.by / realt.by but
+    // still drop placeholder-zero and impossibly large values.
+    if (candidate && candidate.byn >= priceRange.min && candidate.byn <= priceRange.max) {
       parsedCandidates.push(candidate.byn)
       if (splitVariant && rawText === splitVariant) splitCandidate = candidate.byn
     }
@@ -421,11 +428,13 @@ function scan(root: ParentNode) {
   if (!settings || !settings.enabled) return
   const preset = getPresetForLocation(location)
   const forceAssumeByn =
+    preset?.forceAssumeByn === true ||
     preset?.id === 'onliner' ||
     preset?.id === 'shop' ||
     preset?.id === '21vek' ||
     preset?.id === '7745' ||
     preset?.id === 'newton'
+  const priceRange = preset?.priceRange ?? DEFAULT_PRICE_RANGE
   ensureStyles()
   applyVisualSettings()
 
@@ -444,7 +453,7 @@ function scan(root: ParentNode) {
   const trackedPrimaryValues: number[] = []
   for (const el of leafCandidates) {
     if (preset?.excludeSelectors?.some((sel) => el.closest(sel))) continue
-    const byn = applyToElement(el, forceAssumeByn)
+    const byn = applyToElement(el, forceAssumeByn, priceRange)
     if (byn != null) {
       trackedBynValues.push(byn)
       const isPrimary = (preset?.trackerPrimarySelectors ?? []).some((sel) => {
