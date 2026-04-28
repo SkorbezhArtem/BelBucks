@@ -69,32 +69,53 @@ function isRateWidgetContext(el: Element, textVariants: string[]): boolean {
   return false
 }
 
+function textExcludingBadges(root: Element | null | undefined): string {
+  // Collect text content of `root` while skipping any subtree that belongs
+  // to one of our rendered badges. This is critical because our badge text
+  // already contains the target currency symbol ("≈ $5.99") — without this
+  // filter, sibling/ancestor checks would self-trigger on re-scans.
+  if (!root) return ''
+  if ((root as HTMLElement).dataset?.bbBadge === '1') return ''
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let p: Node | null = node.parentNode
+      while (p && p !== root) {
+        if (p.nodeType === Node.ELEMENT_NODE && (p as HTMLElement).dataset?.bbBadge === '1') {
+          return NodeFilter.FILTER_REJECT
+        }
+        p = p.parentNode
+      }
+      return NodeFilter.FILTER_ACCEPT
+    },
+  })
+  const parts: string[] = []
+  let n: Node | null = walker.nextNode()
+  while (n) {
+    parts.push(n.textContent ?? '')
+    n = walker.nextNode()
+  }
+  return parts.join(' ')
+}
+
 function hasNearbyCurrencyHint(el: Element): boolean {
-  const own = el.textContent ?? ''
-  if (hasCurrencyHint(own)) return true
-  const parent = el.parentElement?.textContent ?? ''
-  if (hasCurrencyHint(parent)) return true
-  const prev = el.previousElementSibling?.textContent ?? ''
-  if (hasCurrencyHint(prev)) return true
-  const next = el.nextElementSibling?.textContent ?? ''
-  return hasCurrencyHint(next)
+  if (hasCurrencyHint(textExcludingBadges(el))) return true
+  if (hasCurrencyHint(textExcludingBadges(el.parentElement))) return true
+  if (hasCurrencyHint(textExcludingBadges(el.previousElementSibling))) return true
+  return hasCurrencyHint(textExcludingBadges(el.nextElementSibling))
 }
 
 function hasNearbyNonBynMarker(el: Element): boolean {
   // Look up to 3 ancestors and the immediate sibling pair so we catch markers
   // that sit next to the price node (e.g. $-prices on kufar with the symbol
-  // rendered in a sibling span).
-  const own = el.textContent ?? ''
-  if (hasNonBynMarker(own)) return true
+  // rendered in a sibling span). Badge text is excluded everywhere.
+  if (hasNonBynMarker(textExcludingBadges(el))) return true
   let cur: Element | null = el.parentElement
   for (let i = 0; cur && i < 3; i++) {
-    if (hasNonBynMarker(cur.textContent ?? '')) return true
+    if (hasNonBynMarker(textExcludingBadges(cur))) return true
     cur = cur.parentElement
   }
-  const prev = el.previousElementSibling?.textContent ?? ''
-  if (hasNonBynMarker(prev)) return true
-  const next = el.nextElementSibling?.textContent ?? ''
-  return hasNonBynMarker(next)
+  if (hasNonBynMarker(textExcludingBadges(el.previousElementSibling))) return true
+  return hasNonBynMarker(textExcludingBadges(el.nextElementSibling))
 }
 
 function isVisibleElement(el: Element): boolean {
