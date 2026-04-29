@@ -61,6 +61,13 @@ function isMinorOnlyFragment(text: string): boolean {
   return false
 }
 
+const INSTALLMENT_RE =
+  /(\/\s*мес\b|в\s*мес(яц|\.)?\b|\/\s*month\b|per\s*month\b|рассроч|кредит|ежемесячн|monthly\s*payment|opłat\s*miesi)/i
+
+function looksLikeInstallment(text: string): boolean {
+  return INSTALLMENT_RE.test(text)
+}
+
 function isRateWidgetContext(el: Element, textVariants: string[]): boolean {
   const own = (el.textContent ?? '').toLowerCase()
   const parent = (el.parentElement?.textContent ?? '').toLowerCase()
@@ -358,6 +365,13 @@ function applyToElement(el: Element, forceAssumeByn: boolean, priceRange: PriceR
   // Skip the old / crossed-out price so we don't render a long "X · ≈ Y"
   // string that pushes the badge off-screen on narrow listings.
   if (isCrossedOutOrOldPrice(el)) return null
+
+  // Installment / monthly-payment cells: parsing the small per-month figure as
+  // BYN and converting yields nonsense ("≈ \$0.85" next to a 2.38 р/мес label).
+  // Probe the local slice first (own + parent) — going wider would catch the
+  // "в рассрочку" copy that appears far above genuine prices.
+  const installmentText = `${textExcludingBadges(el)} ${textExcludingBadges(el.parentElement)}`
+  if (looksLikeInstallment(installmentText)) return null
 
   const splitVariant = extractSplitPriceVariant(el) ?? extractSiblingMinorVariant(el)
   let textVariants = extractTextVariants(el).filter(isLikelyPriceToken)
