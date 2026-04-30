@@ -482,12 +482,24 @@ function scan(root: ParentNode) {
   }
 
   // Track one representative price per scan and suppress obvious outliers.
+  // Strategy:
+  //   1. Prefer values matched by trackerPrimarySelectors when the preset
+  //      provides any (the canonical product price element).
+  //   2. Otherwise compute a median over all parsed prices on the page and
+  //      drop anything > 50× the median — that's almost always a misparse
+  //      ("19 61 06" → 1961.06) or a banner amount that snuck in via a
+  //      generic [class*="price"] selector.
+  //   3. From what survives, pick the largest as the representative.
   const pool = trackedPrimaryValues.length > 0 ? trackedPrimaryValues : trackedBynValues
   if (pool.length > 0) {
-    pool.sort((a, b) => a - b)
-    let representative = pool[pool.length - 1]
-    if (pool.length >= 2) {
-      const second = pool[pool.length - 2]
+    const sorted = [...pool].sort((a, b) => a - b)
+    const median = sorted[Math.floor(sorted.length / 2)] ?? 0
+    const outlierCutoff = median > 0 ? median * 50 : Number.POSITIVE_INFINITY
+    const filtered = sorted.filter((v) => v <= outlierCutoff)
+    const candidates = filtered.length > 0 ? filtered : sorted
+    let representative = candidates[candidates.length - 1]
+    if (candidates.length >= 2) {
+      const second = candidates[candidates.length - 2]
       if (representative > second * 10) representative = second
     }
     void recordPricePoint(location.href, document.title, representative)
