@@ -1,5 +1,6 @@
 import { convertBynToTarget, formatTargetCurrency } from '../shared/converter'
 import { hasNonBynMarker } from '../shared/currencyMarkers'
+import { detectDeclaredPageCurrency } from '../shared/jsonLdCurrency'
 import { parseBynPrice } from '../shared/priceParser'
 import { recordPricePoint } from '../shared/priceTracker'
 import { getRatesCache, getSettings } from '../shared/storage'
@@ -441,7 +442,18 @@ function applyToElement(el: Element, forceAssumeByn: boolean, priceRange: PriceR
 function scan(root: ParentNode) {
   if (!settings || !settings.enabled) return
   const preset = getPresetForLocation(location)
+
+  // Trust the page's own declaration over any preset / heuristic. If the site
+  // explicitly says "priceCurrency: USD" we have no business converting; if it
+  // says BYN we can safely force-assume even when the inline glyph is absent.
+  const declaredCurrency = detectDeclaredPageCurrency(root)
+  if (declaredCurrency && declaredCurrency !== 'BYN' && declaredCurrency !== 'BYR') {
+    return
+  }
+  const declaredByn = declaredCurrency === 'BYN' || declaredCurrency === 'BYR'
+
   const forceAssumeByn =
+    declaredByn ||
     preset?.forceAssumeByn === true ||
     preset?.id === 'onliner' ||
     preset?.id === 'shop' ||
