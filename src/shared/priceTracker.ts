@@ -15,8 +15,15 @@ export type PriceHistoryStore = Record<string, PriceHistoryEntry>
 
 const MAX_ENTRIES = 200
 const MAX_POINTS_PER_ENTRY = 30
-const MIN_RECORD_INTERVAL_MS = 15 * 60 * 1000
+// 6 hours: short enough to catch real price changes during the user's day,
+// long enough that re-opening the same product page (with selectors that
+// briefly mismatch / re-mount) doesn't pollute the timeline with near-duplicate
+// points.
+const MIN_RECORD_INTERVAL_MS = 6 * 60 * 60 * 1000
 const FLUSH_DEBOUNCE_MS = 800
+// Reject any new point whose value differs from the previous one by more
+// than this multiplier — almost always a misparse rather than a real price.
+const SPIKE_MULTIPLIER = 5
 
 let storeCache: PriceHistoryStore | null = null
 let loadPromise: Promise<PriceHistoryStore> | null = null
@@ -122,6 +129,14 @@ async function flushPending(): Promise<void> {
       const tooSoon = p.now - last.t < MIN_RECORD_INTERVAL_MS
       const samePrice = Math.abs(last.byn - p.byn) < 0.0001
       if (tooSoon && samePrice) continue
+      // Write-time anti-spike: refuse a point that diverges wildly from the
+      // last accepted one. This is the right place to do it because once the
+      // bad value lands in storage every consumer (popup chart, csv export,
+      // future migrations) has to filter it out.
+      if (last.byn > 0 && p.byn > 0) {
+        const ratio = Math.max(p.byn / last.byn, last.byn / p.byn)
+        if (ratio > SPIKE_MULTIPLIER) continue
+      }
     }
 
     existing.title = p.title || existing.title
@@ -146,6 +161,10 @@ async function flushPending(): Promise<void> {
         const tooSoon = p.now - last.t < MIN_RECORD_INTERVAL_MS
         const samePrice = Math.abs(last.byn - p.byn) < 0.0001
         if (tooSoon && samePrice) continue
+        if (last.byn > 0 && p.byn > 0) {
+          const ratio = Math.max(p.byn / last.byn, last.byn / p.byn)
+          if (ratio > SPIKE_MULTIPLIER) continue
+        }
       }
       existing.title = p.title || existing.title
       existing.points = [...existing.points, point].slice(-MAX_POINTS_PER_ENTRY)
