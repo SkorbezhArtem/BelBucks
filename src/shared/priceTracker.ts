@@ -174,14 +174,70 @@ async function flushPending(): Promise<void> {
   }
 }
 
+/**
+ * Query parameters that *do* change which product / variant is shown and must
+ * therefore stay in the canonical URL. Anything outside this list (utm_*, gclid,
+ * fbclid, _ga, ref, sort, page, etc.) is dropped before the URL becomes a
+ * storage key — otherwise the same product becomes N entries with N different
+ * tracking tails.
+ */
+const CANONICAL_QUERY_KEYS = new Set([
+  'id',
+  'item',
+  'product',
+  'product_id',
+  'productId',
+  'sku',
+  'variant',
+  'variant_id',
+  'color',
+  'size',
+  'tab',
+  'view',
+  'p', // some shops use ?p=12345 for product id
+])
+
+export function canonicalizeProductUrl(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl)
+    u.hash = ''
+    const keysToDrop: string[] = []
+    u.searchParams.forEach((_v, k) => {
+      const lower = k.toLowerCase()
+      if (
+        lower.startsWith('utm_') ||
+        lower.startsWith('_ga') ||
+        lower === 'gclid' ||
+        lower === 'fbclid' ||
+        lower === 'yclid' ||
+        lower === 'ref' ||
+        lower === 'referrer' ||
+        lower === 'from'
+      ) {
+        keysToDrop.push(k)
+        return
+      }
+      if (!CANONICAL_QUERY_KEYS.has(lower)) keysToDrop.push(k)
+    })
+    for (const k of keysToDrop) u.searchParams.delete(k)
+    // Stable order so two visits with the same params hit the same key.
+    const sorted = Array.from(u.searchParams.entries()).sort(([a], [b]) => a.localeCompare(b))
+    u.search = ''
+    for (const [k, v] of sorted) u.searchParams.append(k, v)
+    return u.toString()
+  } catch {
+    return rawUrl.split('#')[0]
+  }
+}
+
 export async function recordPricePoint(url: string, title: string, byn: number, now = Date.now()): Promise<void> {
-  const cleanUrl = url.split('#')[0]
+  const cleanUrl = canonicalizeProductUrl(url)
   pendingByUrl.set(cleanUrl, { title, byn, now })
   scheduleFlush()
 }
 
 export async function clearPriceHistoryForUrl(url: string): Promise<number> {
-  const cleanUrl = url.split('#')[0]
+  const cleanUrl = canonicalizeProductUrl(url)
   const store = await loadPriceHistory()
   const next: PriceHistoryStore = { ...store }
   let removed = 0
