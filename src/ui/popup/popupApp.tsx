@@ -174,10 +174,47 @@ export function PopupApp() {
           rules: settings.siteRules,
         })
       : true
+  const showTrackerBanner = !!settings && !settings.priceTrackerAcknowledged
+  const trackerOn = !!settings?.priceTrackerEnabled
 
   return (
     <div className="bb-popup">
       <div className="bb-title">BelBucks</div>
+      {settings && showTrackerBanner ? (
+        <div
+          className="bb-popup-controls"
+          style={{
+            border: '1px solid rgba(127, 143, 255, .35)',
+            borderRadius: 8,
+            padding: 8,
+            marginBottom: 8,
+          }}
+        >
+          <div className="bb-muted" style={{ marginBottom: 6, lineHeight: 1.35 }}>
+            История цен на товаре. Данные хранятся <strong>локально</strong>, никуда не отправляются.
+          </div>
+          <div className="bb-row">
+            <button
+              className="bb-btn"
+              type="button"
+              onClick={() =>
+                void save({ ...settings, priceTrackerEnabled: true, priceTrackerAcknowledged: true })
+              }
+            >
+              Включить
+            </button>
+            <button
+              className="bb-btn"
+              type="button"
+              onClick={() =>
+                void save({ ...settings, priceTrackerEnabled: false, priceTrackerAcknowledged: true })
+              }
+            >
+              Не сейчас
+            </button>
+          </div>
+        </div>
+      ) : null}
       {settings ? (
         <div className="bb-popup-controls">
           {activeHost ? (
@@ -190,6 +227,16 @@ export function PopupApp() {
                   const nextRules = upsertHostRule(settings.siteRules, activeHost, e.target.checked ? 'allow' : 'block')
                   void save({ ...settings, siteRules: nextRules })
                 }}
+              />
+            </label>
+          ) : null}
+          {settings.priceTrackerAcknowledged ? (
+            <label className="bb-popup-line">
+              <span>Трекер цен</span>
+              <input
+                type="checkbox"
+                checked={trackerOn}
+                onChange={(e) => void save({ ...settings, priceTrackerEnabled: e.target.checked })}
               />
             </label>
           ) : null}
