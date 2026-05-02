@@ -28,6 +28,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   whitelistDomains: [],
   blacklistDomains: [],
   customRates: {},
+  priceTrackerEnabled: false,
+  priceTrackerAcknowledged: false,
 }
 
 const SETTINGS_WRITE_DEBOUNCE_MS = 220

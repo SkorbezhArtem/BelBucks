@@ -51,6 +51,15 @@ export interface UserSettings {
   useWhitelistOnly: boolean
   whitelistDomains: string[]
   blacklistDomains: string[]
+
+  /**
+   * Price-history tracker. Off by default — the user must explicitly opt in
+   * via the popup banner before any per-URL data is written to local storage.
+   * When false, recordPricePoint() is a no-op.
+   */
+  priceTrackerEnabled: boolean
+  /** Set when the user has acknowledged the tracker disclosure (banner). */
+  priceTrackerAcknowledged?: boolean
 }
 
 export interface RatesCache {

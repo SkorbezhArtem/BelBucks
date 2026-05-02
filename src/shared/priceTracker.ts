@@ -1,4 +1,4 @@
-import { STORAGE_KEYS } from './storage'
+import { getSettings, STORAGE_KEYS } from './storage'
 
 export interface PricePoint {
   t: number
@@ -231,6 +231,11 @@ export function canonicalizeProductUrl(rawUrl: string): string {
 }
 
 export async function recordPricePoint(url: string, title: string, byn: number, now = Date.now()): Promise<void> {
+  // Hard opt-in. Until the user toggles priceTrackerEnabled in the popup we
+  // never persist any per-URL data — this is what the manifest disclosure
+  // promises and what the privacy policy will state.
+  const settings = await getSettings()
+  if (!settings.priceTrackerEnabled) return
   const cleanUrl = canonicalizeProductUrl(url)
   pendingByUrl.set(cleanUrl, { title, byn, now })
   scheduleFlush()
