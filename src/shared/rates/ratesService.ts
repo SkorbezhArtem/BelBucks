@@ -83,7 +83,23 @@ async function fetchRate(provider: RateProvider, currency: TargetCurrency, setti
   return PROVIDERS[provider].fetchRate(currency, settings)
 }
 
+/**
+ * Hard upper bound on rate-cache age, independent of whatever ttlMs the cache
+ * was written with. If we've gone this long without a successful refresh, the
+ * extension treats the cache as missing and refuses to convert until the next
+ * fetch lands. Without this, a long network outage would silently surface
+ * week-old rates as "current".
+ */
+export const RATES_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
 export function isRatesCacheFresh(cache: RatesCache, now = Date.now()): boolean {
-  return now - cache.fetchedAt < cache.ttlMs
+  const age = now - cache.fetchedAt
+  if (age >= RATES_CACHE_MAX_AGE_MS) return false
+  return age < cache.ttlMs
+}
+
+export function isRatesCacheUsable(cache: RatesCache | null, now = Date.now()): boolean {
+  if (!cache) return false
+  return now - cache.fetchedAt < RATES_CACHE_MAX_AGE_MS
 }
 
