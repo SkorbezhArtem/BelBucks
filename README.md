@@ -72,7 +72,6 @@ BelBucks requests:
 
 - `storage` — persist user settings and local rates/tracker cache.
 - `alarms` — schedule periodic rates refresh in background.
-- `activeTab` — quick site toggles and popup context actions for current tab.
 
 Host permissions:
 
@@ -82,6 +81,36 @@ Host permissions:
 Content script scope:
 
 - `<all_urls>` — required for BYN price detection across user-visited pages.
+  The content script only reads visible price text; nothing is sent off-device.
+
+## Single Purpose
+
+BelBucks has a single purpose: **show the foreign-currency equivalent of BYN
+prices on web pages the user is already looking at.** All features (rate
+providers, themes, per-site rules, optional price-history sparkline) exist to
+serve that one goal. There is no analytics, no remote logging, no advertising,
+no account, and no server owned by BelBucks.
+
+## Privacy
+
+- **No data leaves the user's device.** The extension does not send price
+  text, page URLs, page content or user identifiers to any server. The only
+  outbound network requests are to the official rate sources listed in the
+  `Host permissions` section above.
+- **Local-only storage.**
+  - `chrome.storage.sync` — user settings (currency, theme, per-site rules).
+    Synced across the user's own Chrome profile by Chrome itself; BelBucks
+    never reads it from any other device or account.
+  - `chrome.storage.local` — exchange-rate cache and (only if explicitly
+    enabled) the price-history sparkline. Deleted when the extension is
+    uninstalled.
+- **Price tracker is opt-in.** The price-history feature is off by default.
+  A first-run banner in the popup asks for explicit consent; until the user
+  clicks "Включить" no per-URL data is recorded. The user can turn it back
+  off at any time, and individual URL histories can be cleared from the
+  popup.
+- **No third parties.** BelBucks does not embed analytics SDKs, tag
+  managers, or remote scripts.
 
 ## Project Structure
 
