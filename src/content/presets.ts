@@ -428,6 +428,47 @@ const PRESETS: SitePreset[] = [
     // Real estate: 2-3M BYN is normal. Allow up to 100M for the rare luxury items.
     priceRange: { min: 1, max: 100_000_000 },
   },
+  {
+    id: 'abw',
+    match: (loc) => /(^|\.)abw\.by$/i.test(loc.hostname),
+    priceSelectors: ['.price', '.car-price', '[class*="price" i]'],
+    excludeSelectors: ['[class*="rating" i]', '[class*="phone" i]'],
+    productPriceSelector: '.car-price, .price',
+    oldPriceSelectors: ['[class*="old" i][class*="price" i]'],
+    isProductPage: (loc) => /\/cars\/|\/avto\/|\/car-\d+/i.test(loc.pathname),
+    // Cars on abw.by: same scale as av.by.
+    priceRange: { min: 1, max: 50_000_000 },
+  },
+  {
+    id: 'dom',
+    match: (loc) => /(^|\.)dom\.by$/i.test(loc.hostname),
+    priceSelectors: ['.price', '.object-price', '[class*="price" i]', '[class*="cost" i]'],
+    excludeSelectors: ['[class*="phone" i]', '[class*="contact" i]'],
+    productPriceSelector: '.object-price, .price',
+    oldPriceSelectors: ['[class*="old" i][class*="price" i]'],
+    isProductPage: (loc) => /\/object|\/property|\/announcement/i.test(loc.pathname),
+    priceRange: { min: 1, max: 100_000_000 },
+  },
+  {
+    id: 'kvartirant',
+    match: (loc) => /(^|\.)kvartirant\.by$/i.test(loc.hostname),
+    priceSelectors: ['.price', '.cost', '[class*="price" i]', '[class*="cost" i]'],
+    excludeSelectors: ['[class*="phone" i]', '[class*="contact" i]'],
+    productPriceSelector: '.price, .cost',
+    oldPriceSelectors: ['[class*="old" i][class*="price" i]'],
+    isProductPage: (loc) => /\/object|\/announcement|\/rent\//i.test(loc.pathname),
+    priceRange: { min: 1, max: 50_000_000 },
+  },
+  {
+    id: 'home',
+    match: (loc) => /(^|\.)home\.by$/i.test(loc.hostname),
+    priceSelectors: ['.price', '.object__price', '[class*="price" i]', '[class*="cost" i]'],
+    excludeSelectors: ['[class*="phone" i]', '[class*="contact" i]'],
+    productPriceSelector: '.object__price, .price',
+    oldPriceSelectors: ['[class*="old" i][class*="price" i]'],
+    isProductPage: (loc) => /\/object|\/announcement/i.test(loc.pathname),
+    priceRange: { min: 1, max: 100_000_000 },
+  },
 ]
 
 const GENERIC: SitePreset = {
