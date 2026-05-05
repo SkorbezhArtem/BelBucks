@@ -154,6 +154,25 @@ export function PopupApp() {
     }
   }
 
+  type PickerRole = 'currentPrice' | 'productPrice' | 'oldPrice' | 'installment' | 'notAPrice'
+
+  async function startPickerForRole(role: PickerRole) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab?.id) {
+      setStatus('No active tab')
+      window.setTimeout(() => setStatus(''), 1400)
+      return
+    }
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'bb_start_picker', role })
+      setStatus('Pick element on page…')
+      window.close()
+    } catch {
+      setStatus('Picker not available here')
+      window.setTimeout(() => setStatus(''), 1800)
+    }
+  }
+
   const currencyOptions: TargetCurrency[] = ['USD', 'EUR', 'PLN', 'RUB']
   const providerOptions: { id: RateProvider; label: string }[] = [
     { id: 'NBRB', label: 'НБРБ' },
@@ -333,6 +352,27 @@ export function PopupApp() {
               Полные настройки
             </button>
             <span className="bb-status">{status}</span>
+          </div>
+
+          <div className="bb-popup-line" style={{ marginTop: 8 }}>
+            <span>Выбрать элемент</span>
+          </div>
+          <div className="bb-row">
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('currentPrice')}>
+              Цена
+            </button>
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('productPrice')}>
+              Цена товара
+            </button>
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('oldPrice')}>
+              Старая
+            </button>
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('installment')}>
+              Рассрочка
+            </button>
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('notAPrice')}>
+              Не цена
+            </button>
           </div>
         </div>
       ) : null}
