@@ -6,7 +6,8 @@ import { recordPricePoint } from '../shared/priceTracker'
 import { getRatesCache, getSettings } from '../shared/storage'
 import { isEnabledForSite } from '../shared/siteRules'
 import { resolveVisualSettingsForHost } from '../shared/siteVisual'
-import type { RatesCache, UserSettings } from '../shared/types'
+import type { RatesCache, UserSettings, UserSiteRule } from '../shared/types'
+import { getUserRuleForHost } from '../shared/userSiteRules'
 import type { PriceRange } from './presets.ts'
 import { getPresetForLocation } from './presets.ts'
 
@@ -439,9 +440,22 @@ function applyToElement(el: Element, forceAssumeByn: boolean, priceRange: PriceR
   return parsedByn
 }
 
+function elementMatchesAny(el: Element, selectors: string[] | undefined): boolean {
+  if (!selectors || selectors.length === 0) return false
+  for (const sel of selectors) {
+    try {
+      if (el.matches(sel) || el.closest(sel)) return true
+    } catch {
+      // ignore invalid CSS — user-supplied selectors might be malformed
+    }
+  }
+  return false
+}
+
 function scan(root: ParentNode) {
   if (!settings || !settings.enabled) return
   const preset = getPresetForLocation(location)
+  const userRule: UserSiteRule | null = settings ? getUserRuleForHost(settings, location.hostname) : null
 
   // Trust the page's own declaration over any preset / heuristic. If the site
   // explicitly says "priceCurrency: USD" we have no business converting; if it
@@ -464,10 +478,14 @@ function scan(root: ParentNode) {
   ensureStyles()
   applyVisualSettings()
 
-  const selectors = preset?.priceSelectors ?? []
+  const selectors = [...(preset?.priceSelectors ?? []), ...(userRule?.currentPrice ?? []), ...(userRule?.productPrice ?? [])]
   const candidateSet = new Set<Element>()
   for (const sel of selectors) {
-    root.querySelectorAll(sel).forEach((el) => candidateSet.add(el))
+    try {
+      root.querySelectorAll(sel).forEach((el) => candidateSet.add(el))
+    } catch {
+      // ignore malformed user-supplied selectors
+    }
   }
   for (const el of collectTextFallbackCandidates(root)) {
     candidateSet.add(el)
@@ -479,6 +497,9 @@ function scan(root: ParentNode) {
   const trackedPrimaryValues: number[] = []
   for (const el of leafCandidates) {
     if (preset?.excludeSelectors?.some((sel) => el.closest(sel))) continue
+    if (elementMatchesAny(el, userRule?.notAPrice)) continue
+    if (elementMatchesAny(el, userRule?.oldPrice)) continue
+    if (elementMatchesAny(el, userRule?.installment)) continue
     const byn = applyToElement(el, forceAssumeByn, priceRange)
     if (byn != null) {
       trackedBynValues.push(byn)
@@ -507,9 +528,20 @@ function scan(root: ParentNode) {
   const isProductPage = preset?.isProductPage ? preset.isProductPage(location) : true
   let representative: number | null = null
 
-  if (isProductPage && preset?.productPriceSelector) {
-    const matches = root.querySelectorAll<Element>(preset.productPriceSelector)
-    if (matches.length === 1) {
+  // User-pinned product price wins over the preset's productPriceSelector.
+  const productSelector =
+    (userRule?.productPrice && userRule.productPrice.length > 0
+      ? userRule.productPrice.join(', ')
+      : null) ?? preset?.productPriceSelector
+
+  if (isProductPage && productSelector) {
+    let matches: NodeListOf<Element> | null = null
+    try {
+      matches = root.querySelectorAll<Element>(productSelector)
+    } catch {
+      matches = null
+    }
+    if (matches && matches.length === 1) {
       const sole = matches[0]
       const text = textExcludingBadges(sole)
       const parsed =
