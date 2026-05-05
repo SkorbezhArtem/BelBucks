@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   siteDefaultMode: 'enabledEverywhere',
   siteRules: [],
   siteVisualRules: [],
+  userSiteRules: [],
   useWhitelistOnly: false,
   whitelistDomains: [],
   blacklistDomains: [],
