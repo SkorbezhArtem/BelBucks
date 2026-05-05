@@ -3,13 +3,14 @@ import { hasNonBynMarker } from '../shared/currencyMarkers'
 import { detectDeclaredPageCurrency } from '../shared/jsonLdCurrency'
 import { parseBynPrice } from '../shared/priceParser'
 import { recordPricePoint } from '../shared/priceTracker'
-import { getRatesCache, getSettings } from '../shared/storage'
+import { getRatesCache, getSettings, setSettings } from '../shared/storage'
 import { isEnabledForSite } from '../shared/siteRules'
 import { resolveVisualSettingsForHost } from '../shared/siteVisual'
 import type { RatesCache, UserSettings, UserSiteRule } from '../shared/types'
-import { getUserRuleForHost } from '../shared/userSiteRules'
+import { getUserRuleForHost, pushSelector, upsertUserSiteRule } from '../shared/userSiteRules'
 import type { PriceRange } from './presets.ts'
 import { getPresetForLocation } from './presets.ts'
+import { startPicker } from './picker'
 
 // Sane defaults for hosts where we have no preset. Lower than the previous
 // 1_000_000 BYN ceiling because real-estate / cars on .by easily clear it,
@@ -658,6 +659,38 @@ async function init() {
     }
   })
 }
+
+type PickerRole = 'currentPrice' | 'productPrice' | 'oldPrice' | 'installment' | 'notAPrice'
+
+async function applyPickedSelector(role: PickerRole, selector: string): Promise<void> {
+  const s = await getSettings()
+  const host = location.hostname.toLowerCase()
+  const nextRules = upsertUserSiteRule(s.userSiteRules ?? [], host, (existing) => {
+    return { ...existing, [role]: pushSelector(existing[role], selector) }
+  })
+  await setSettings({ ...s, userSiteRules: nextRules })
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // Only respond to messages from our own extension (popup / options).
+  if (sender.id && sender.id !== chrome.runtime.id) return
+  if (typeof msg !== 'object' || msg == null) return
+  const m = msg as { type?: string; role?: PickerRole }
+  if (m.type === 'bb_start_picker' && m.role) {
+    const role = m.role
+    const started = startPicker((result) => {
+      if (!result) return
+      void applyPickedSelector(role, result.selector).then(() => {
+        // Repaint immediately so the user sees the effect of their selection.
+        resetRenderedBadges()
+        scan(document)
+      })
+    })
+    sendResponse({ ok: started })
+    return true
+  }
+  return undefined
+})
 
 void init()
 
