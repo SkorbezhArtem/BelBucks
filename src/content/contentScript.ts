@@ -317,6 +317,16 @@ function ensureStyles() {
   vertical-align:middle;
   box-shadow:0 1px 0 rgba(255,255,255,.4) inset, 0 1px 4px rgba(17,24,39,.18);
 }
+.bb-inline-card[data-bb-strategy="block-below"]{
+  display:block !important;
+  margin-left:0;
+  margin-top:.25em;
+  width:max-content !important;
+}
+.bb-inline-card[data-bb-strategy="prepend"]{
+  margin-left:0;
+  margin-right:.45em;
+}
 `
   document.documentElement.appendChild(style)
 }
@@ -340,9 +350,20 @@ function renderInline(el: Element, text: string) {
   const host = el as HTMLElement
   if (!host.dataset.bbHostId) host.dataset.bbHostId = `bb-${++badgeCounter}`
   const hostId = host.dataset.bbHostId
+  const strategy = settings
+    ? resolveVisualSettingsForHost(settings, location.hostname).rule?.badgeStrategy ?? 'inline'
+    : 'inline'
+
+  // Tooltip strategy: don't draw a visible badge at all, just attach title=.
+  if (strategy === 'tooltip') {
+    host.setAttribute('title', text)
+    return
+  }
+
   const existing = host.parentElement?.querySelector(`.bb-inline-card[data-bb-for="${hostId}"]`) ?? null
   if (existing) {
     ;(existing as HTMLElement).textContent = text
+    ;(existing as HTMLElement).setAttribute('data-bb-strategy', strategy)
     return
   }
   const span = document.createElement('span')
@@ -350,7 +371,14 @@ function renderInline(el: Element, text: string) {
   span.textContent = text
   span.setAttribute('data-bb-badge', '1')
   span.setAttribute('data-bb-for', hostId)
-  el.insertAdjacentElement('afterend', span)
+  span.setAttribute('data-bb-strategy', strategy)
+
+  if (strategy === 'prepend') {
+    el.insertAdjacentElement('beforebegin', span)
+  } else {
+    // 'inline' and 'block-below' both mount after the price; CSS handles layout.
+    el.insertAdjacentElement('afterend', span)
+  }
 }
 
 function applyToElement(el: Element, forceAssumeByn: boolean, priceRange: PriceRange): number | null {
