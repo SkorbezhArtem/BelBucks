@@ -35,18 +35,30 @@ function pickCurrencyFromJsonObject(node: unknown, sink: CurrencyCode[]): void {
   }
 }
 
+/**
+ * Pure helper exported for unit-testing: parses a single JSON-LD block's text
+ * and returns every priceCurrency it finds anywhere inside the tree (Offer,
+ * AggregateOffer, nested Product etc.). Returns an empty array on parse error.
+ */
+export function extractCurrenciesFromJsonText(text: string): CurrencyCode[] {
+  if (!text) return []
+  const out: CurrencyCode[] = []
+  try {
+    const parsed = JSON.parse(text)
+    pickCurrencyFromJsonObject(parsed, out)
+  } catch {
+    // Many sites embed templated / broken JSON. Caller treats this as silence.
+  }
+  return out
+}
+
 function readJsonLdBlocks(root: ParentNode): CurrencyCode[] {
   const out: CurrencyCode[] = []
   const scripts = root.querySelectorAll('script[type="application/ld+json"]')
   scripts.forEach((s) => {
     const txt = s.textContent
     if (!txt) return
-    try {
-      const parsed = JSON.parse(txt)
-      pickCurrencyFromJsonObject(parsed, out)
-    } catch {
-      // Many sites embed templated/broken JSON. Ignore and move on.
-    }
+    for (const cc of extractCurrenciesFromJsonText(txt)) out.push(cc)
   })
   return out
 }
