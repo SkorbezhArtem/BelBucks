@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   badgeFontSizePx: 12,
   badgePaddingYpx: 2,
   badgePaddingXpx: 8,
+  uiThemeMode: 'auto',
   siteDefaultMode: 'enabledEverywhere',
   siteRules: [],
   siteVisualRules: [],
