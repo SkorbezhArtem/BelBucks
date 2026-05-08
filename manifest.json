@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "BelBucks",
   "description": "Automatic BYN → foreign currency conversion on Belarusian marketplaces.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "action": {
     "default_title": "BelBucks",
     "default_popup": "popup.html"
