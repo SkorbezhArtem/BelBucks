@@ -5,6 +5,15 @@ export type RateProvider = 'NBRB' | 'BankAverage' | 'BankBest' | 'BankSpecific' 
 export type DisplayMode = 'inline' | 'tooltip'
 export type BadgeThemeMode = 'manual' | 'auto'
 
+/**
+ * UI theme mode for the popup and options page chrome (NOT the inline badge
+ * appearance, which is controlled by `badgeThemeMode`).
+ *  - 'auto'  — follow OS / browser `prefers-color-scheme`
+ *  - 'light' — force light surface
+ *  - 'dark'  — force dark surface
+ */
+export type UiThemeMode = 'auto' | 'light' | 'dark'
+
 export type SiteDefaultMode = 'enabledEverywhere' | 'disabledEverywhere'
 
 export interface SiteRule {
@@ -66,6 +75,9 @@ export interface UserSettings {
   badgeFontSizePx: number
   badgePaddingYpx: number
   badgePaddingXpx: number
+
+  /** UI chrome theme for popup + options. Defaults to 'auto'. */
+  uiThemeMode: UiThemeMode
 
   /** New flexible per-site switching */
   siteDefaultMode: SiteDefaultMode
