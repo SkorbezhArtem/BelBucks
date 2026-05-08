@@ -32,7 +32,18 @@ chrome.alarms.onAlarm.addListener((alarm: chrome.alarms.Alarm) => {
   void refreshRatesIfNeeded(false).catch(() => {})
 })
 
-chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
+function isTrustedSender(sender: chrome.runtime.MessageSender): boolean {
+  // Same extension only. External pages (including same-origin iframes that
+  // somehow forward messages) get sender.id !== chrome.runtime.id.
+  if (sender.id && sender.id !== chrome.runtime.id) return false
+  // Reject messages whose origin we cannot verify (e.g. coming from a
+  // sandboxed iframe with no url/origin set).
+  if (sender.tab && !sender.url && !sender.origin) return false
+  return true
+}
+
+chrome.runtime.onMessage.addListener((msg: unknown, sender, sendResponse) => {
+  if (!isTrustedSender(sender)) return
   if (typeof msg !== 'object' || msg == null) return
   const type = (msg as { type?: string }).type
   if (type === 'bb_refresh_rates') {

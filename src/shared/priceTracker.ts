@@ -1,4 +1,4 @@
-import { STORAGE_KEYS } from './storage'
+import { getSettings, STORAGE_KEYS } from './storage'
 
 export interface PricePoint {
   t: number
@@ -15,8 +15,15 @@ export type PriceHistoryStore = Record<string, PriceHistoryEntry>
 
 const MAX_ENTRIES = 200
 const MAX_POINTS_PER_ENTRY = 30
-const MIN_RECORD_INTERVAL_MS = 15 * 60 * 1000
+// 6 hours: short enough to catch real price changes during the user's day,
+// long enough that re-opening the same product page (with selectors that
+// briefly mismatch / re-mount) doesn't pollute the timeline with near-duplicate
+// points.
+const MIN_RECORD_INTERVAL_MS = 6 * 60 * 60 * 1000
 const FLUSH_DEBOUNCE_MS = 800
+// Reject any new point whose value differs from the previous one by more
+// than this multiplier — almost always a misparse rather than a real price.
+const SPIKE_MULTIPLIER = 5
 
 let storeCache: PriceHistoryStore | null = null
 let loadPromise: Promise<PriceHistoryStore> | null = null
@@ -122,6 +129,14 @@ async function flushPending(): Promise<void> {
       const tooSoon = p.now - last.t < MIN_RECORD_INTERVAL_MS
       const samePrice = Math.abs(last.byn - p.byn) < 0.0001
       if (tooSoon && samePrice) continue
+      // Write-time anti-spike: refuse a point that diverges wildly from the
+      // last accepted one. This is the right place to do it because once the
+      // bad value lands in storage every consumer (popup chart, csv export,
+      // future migrations) has to filter it out.
+      if (last.byn > 0 && p.byn > 0) {
+        const ratio = Math.max(p.byn / last.byn, last.byn / p.byn)
+        if (ratio > SPIKE_MULTIPLIER) continue
+      }
     }
 
     existing.title = p.title || existing.title
@@ -146,6 +161,10 @@ async function flushPending(): Promise<void> {
         const tooSoon = p.now - last.t < MIN_RECORD_INTERVAL_MS
         const samePrice = Math.abs(last.byn - p.byn) < 0.0001
         if (tooSoon && samePrice) continue
+        if (last.byn > 0 && p.byn > 0) {
+          const ratio = Math.max(p.byn / last.byn, last.byn / p.byn)
+          if (ratio > SPIKE_MULTIPLIER) continue
+        }
       }
       existing.title = p.title || existing.title
       existing.points = [...existing.points, point].slice(-MAX_POINTS_PER_ENTRY)
@@ -155,14 +174,75 @@ async function flushPending(): Promise<void> {
   }
 }
 
+/**
+ * Query parameters that *do* change which product / variant is shown and must
+ * therefore stay in the canonical URL. Anything outside this list (utm_*, gclid,
+ * fbclid, _ga, ref, sort, page, etc.) is dropped before the URL becomes a
+ * storage key — otherwise the same product becomes N entries with N different
+ * tracking tails.
+ */
+const CANONICAL_QUERY_KEYS = new Set([
+  'id',
+  'item',
+  'product',
+  'product_id',
+  'productId',
+  'sku',
+  'variant',
+  'variant_id',
+  'color',
+  'size',
+  'tab',
+  'view',
+  'p', // some shops use ?p=12345 for product id
+])
+
+export function canonicalizeProductUrl(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl)
+    u.hash = ''
+    const keysToDrop: string[] = []
+    u.searchParams.forEach((_v, k) => {
+      const lower = k.toLowerCase()
+      if (
+        lower.startsWith('utm_') ||
+        lower.startsWith('_ga') ||
+        lower === 'gclid' ||
+        lower === 'fbclid' ||
+        lower === 'yclid' ||
+        lower === 'ref' ||
+        lower === 'referrer' ||
+        lower === 'from'
+      ) {
+        keysToDrop.push(k)
+        return
+      }
+      if (!CANONICAL_QUERY_KEYS.has(lower)) keysToDrop.push(k)
+    })
+    for (const k of keysToDrop) u.searchParams.delete(k)
+    // Stable order so two visits with the same params hit the same key.
+    const sorted = Array.from(u.searchParams.entries()).sort(([a], [b]) => a.localeCompare(b))
+    u.search = ''
+    for (const [k, v] of sorted) u.searchParams.append(k, v)
+    return u.toString()
+  } catch {
+    return rawUrl.split('#')[0]
+  }
+}
+
 export async function recordPricePoint(url: string, title: string, byn: number, now = Date.now()): Promise<void> {
-  const cleanUrl = url.split('#')[0]
+  // Hard opt-in. Until the user toggles priceTrackerEnabled in the popup we
+  // never persist any per-URL data — this is what the manifest disclosure
+  // promises and what the privacy policy will state.
+  const settings = await getSettings()
+  if (!settings.priceTrackerEnabled) return
+  const cleanUrl = canonicalizeProductUrl(url)
   pendingByUrl.set(cleanUrl, { title, byn, now })
   scheduleFlush()
 }
 
 export async function clearPriceHistoryForUrl(url: string): Promise<number> {
-  const cleanUrl = url.split('#')[0]
+  const cleanUrl = canonicalizeProductUrl(url)
   const store = await loadPriceHistory()
   const next: PriceHistoryStore = { ...store }
   let removed = 0

@@ -24,10 +24,13 @@ export const DEFAULT_SETTINGS: UserSettings = {
   siteDefaultMode: 'enabledEverywhere',
   siteRules: [],
   siteVisualRules: [],
+  userSiteRules: [],
   useWhitelistOnly: false,
   whitelistDomains: [],
   blacklistDomains: [],
   customRates: {},
+  priceTrackerEnabled: false,
+  priceTrackerAcknowledged: false,
 }
 
 const SETTINGS_WRITE_DEBOUNCE_MS = 220

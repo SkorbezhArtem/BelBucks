@@ -154,6 +154,25 @@ export function PopupApp() {
     }
   }
 
+  type PickerRole = 'currentPrice' | 'productPrice' | 'oldPrice' | 'installment' | 'notAPrice'
+
+  async function startPickerForRole(role: PickerRole) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab?.id) {
+      setStatus('No active tab')
+      window.setTimeout(() => setStatus(''), 1400)
+      return
+    }
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'bb_start_picker', role })
+      setStatus('Pick element on page…')
+      window.close()
+    } catch {
+      setStatus('Picker not available here')
+      window.setTimeout(() => setStatus(''), 1800)
+    }
+  }
+
   const currencyOptions: TargetCurrency[] = ['USD', 'EUR', 'PLN', 'RUB']
   const providerOptions: { id: RateProvider; label: string }[] = [
     { id: 'NBRB', label: 'НБРБ' },
@@ -174,10 +193,47 @@ export function PopupApp() {
           rules: settings.siteRules,
         })
       : true
+  const showTrackerBanner = !!settings && !settings.priceTrackerAcknowledged
+  const trackerOn = !!settings?.priceTrackerEnabled
 
   return (
     <div className="bb-popup">
       <div className="bb-title">BelBucks</div>
+      {settings && showTrackerBanner ? (
+        <div
+          className="bb-popup-controls"
+          style={{
+            border: '1px solid rgba(127, 143, 255, .35)',
+            borderRadius: 8,
+            padding: 8,
+            marginBottom: 8,
+          }}
+        >
+          <div className="bb-muted" style={{ marginBottom: 6, lineHeight: 1.35 }}>
+            История цен на товаре. Данные хранятся <strong>локально</strong>, никуда не отправляются.
+          </div>
+          <div className="bb-row">
+            <button
+              className="bb-btn"
+              type="button"
+              onClick={() =>
+                void save({ ...settings, priceTrackerEnabled: true, priceTrackerAcknowledged: true })
+              }
+            >
+              Включить
+            </button>
+            <button
+              className="bb-btn"
+              type="button"
+              onClick={() =>
+                void save({ ...settings, priceTrackerEnabled: false, priceTrackerAcknowledged: true })
+              }
+            >
+              Не сейчас
+            </button>
+          </div>
+        </div>
+      ) : null}
       {settings ? (
         <div className="bb-popup-controls">
           {activeHost ? (
@@ -190,6 +246,16 @@ export function PopupApp() {
                   const nextRules = upsertHostRule(settings.siteRules, activeHost, e.target.checked ? 'allow' : 'block')
                   void save({ ...settings, siteRules: nextRules })
                 }}
+              />
+            </label>
+          ) : null}
+          {settings.priceTrackerAcknowledged ? (
+            <label className="bb-popup-line">
+              <span>Трекер цен</span>
+              <input
+                type="checkbox"
+                checked={trackerOn}
+                onChange={(e) => void save({ ...settings, priceTrackerEnabled: e.target.checked })}
               />
             </label>
           ) : null}
@@ -286,6 +352,27 @@ export function PopupApp() {
               Полные настройки
             </button>
             <span className="bb-status">{status}</span>
+          </div>
+
+          <div className="bb-popup-line" style={{ marginTop: 8 }}>
+            <span>Выбрать элемент</span>
+          </div>
+          <div className="bb-row">
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('currentPrice')}>
+              Цена
+            </button>
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('productPrice')}>
+              Цена товара
+            </button>
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('oldPrice')}>
+              Старая
+            </button>
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('installment')}>
+              Рассрочка
+            </button>
+            <button className="bb-btn" type="button" onClick={() => void startPickerForRole('notAPrice')}>
+              Не цена
+            </button>
           </div>
         </div>
       ) : null}

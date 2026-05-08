@@ -1,11 +1,21 @@
 import { convertBynToTarget, formatTargetCurrency } from '../shared/converter'
+import { hasNonBynMarker } from '../shared/currencyMarkers'
+import { detectDeclaredPageCurrency } from '../shared/jsonLdCurrency'
 import { parseBynPrice } from '../shared/priceParser'
 import { recordPricePoint } from '../shared/priceTracker'
-import { getRatesCache, getSettings } from '../shared/storage'
+import { getRatesCache, getSettings, setSettings } from '../shared/storage'
 import { isEnabledForSite } from '../shared/siteRules'
 import { resolveVisualSettingsForHost } from '../shared/siteVisual'
-import type { RatesCache, UserSettings } from '../shared/types'
+import type { RatesCache, UserSettings, UserSiteRule } from '../shared/types'
+import { getUserRuleForHost, pushSelector, upsertUserSiteRule } from '../shared/userSiteRules'
+import type { PriceRange } from './presets.ts'
 import { getPresetForLocation } from './presets.ts'
+import { startPicker } from './picker'
+
+// Sane defaults for hosts where we have no preset. Lower than the previous
+// 1_000_000 BYN ceiling because real-estate / cars on .by easily clear it,
+// but still high enough to filter out absurd values from broken parses.
+const DEFAULT_PRICE_RANGE: PriceRange = { min: 0.01, max: 100_000_000 }
 
 let PROCESSED = new WeakSet<Element>()
 let settings: UserSettings | null = null
@@ -54,6 +64,13 @@ function isMinorOnlyFragment(text: string): boolean {
   return false
 }
 
+const INSTALLMENT_RE =
+  /(\/\s*мес\b|в\s*мес(яц|\.)?\b|\/\s*month\b|per\s*month\b|рассроч|кредит|ежемесячн|monthly\s*payment|opłat\s*miesi)/i
+
+function looksLikeInstallment(text: string): boolean {
+  return INSTALLMENT_RE.test(text)
+}
+
 function isRateWidgetContext(el: Element, textVariants: string[]): boolean {
   const own = (el.textContent ?? '').toLowerCase()
   const parent = (el.parentElement?.textContent ?? '').toLowerCase()
@@ -68,15 +85,53 @@ function isRateWidgetContext(el: Element, textVariants: string[]): boolean {
   return false
 }
 
+function textExcludingBadges(root: Element | null | undefined): string {
+  // Collect text content of `root` while skipping any subtree that belongs
+  // to one of our rendered badges. This is critical because our badge text
+  // already contains the target currency symbol ("≈ $5.99") — without this
+  // filter, sibling/ancestor checks would self-trigger on re-scans.
+  if (!root) return ''
+  if ((root as HTMLElement).dataset?.bbBadge === '1') return ''
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let p: Node | null = node.parentNode
+      while (p && p !== root) {
+        if (p.nodeType === Node.ELEMENT_NODE && (p as HTMLElement).dataset?.bbBadge === '1') {
+          return NodeFilter.FILTER_REJECT
+        }
+        p = p.parentNode
+      }
+      return NodeFilter.FILTER_ACCEPT
+    },
+  })
+  const parts: string[] = []
+  let n: Node | null = walker.nextNode()
+  while (n) {
+    parts.push(n.textContent ?? '')
+    n = walker.nextNode()
+  }
+  return parts.join(' ')
+}
+
 function hasNearbyCurrencyHint(el: Element): boolean {
-  const own = el.textContent ?? ''
-  if (hasCurrencyHint(own)) return true
-  const parent = el.parentElement?.textContent ?? ''
-  if (hasCurrencyHint(parent)) return true
-  const prev = el.previousElementSibling?.textContent ?? ''
-  if (hasCurrencyHint(prev)) return true
-  const next = el.nextElementSibling?.textContent ?? ''
-  return hasCurrencyHint(next)
+  if (hasCurrencyHint(textExcludingBadges(el))) return true
+  if (hasCurrencyHint(textExcludingBadges(el.parentElement))) return true
+  if (hasCurrencyHint(textExcludingBadges(el.previousElementSibling))) return true
+  return hasCurrencyHint(textExcludingBadges(el.nextElementSibling))
+}
+
+function hasNearbyNonBynMarker(el: Element): boolean {
+  // Look up to 3 ancestors and the immediate sibling pair so we catch markers
+  // that sit next to the price node (e.g. $-prices on kufar with the symbol
+  // rendered in a sibling span). Badge text is excluded everywhere.
+  if (hasNonBynMarker(textExcludingBadges(el))) return true
+  let cur: Element | null = el.parentElement
+  for (let i = 0; cur && i < 3; i++) {
+    if (hasNonBynMarker(textExcludingBadges(cur))) return true
+    cur = cur.parentElement
+  }
+  if (hasNonBynMarker(textExcludingBadges(el.previousElementSibling))) return true
+  return hasNonBynMarker(textExcludingBadges(el.nextElementSibling))
 }
 
 function isVisibleElement(el: Element): boolean {
@@ -86,6 +141,31 @@ function isVisibleElement(el: Element): boolean {
   const cs = getComputedStyle(h)
   if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false
   return true
+}
+
+const OLD_PRICE_CLASS_RE = /(^|[\s_-])(old|original|was|crossed|strik|prev|previous|discount-from|old[-_]?price|old[-_]?cost|стар(ая|ой|ую)|зач[её]ркн)/i
+
+function isCrossedOutOrOldPrice(el: Element): boolean {
+  // (a) Wrapping legacy strike-through tags.
+  if (el.closest('s, del, strike')) return true
+  // (b) CSS line-through anywhere up the tree (handles flexbox layouts where the
+  //     <s> got replaced with a span + style).
+  let cur: Element | null = el
+  for (let i = 0; cur && i < 6; i++) {
+    const cs = getComputedStyle(cur as HTMLElement)
+    if (cs.textDecorationLine && /line-through/.test(cs.textDecorationLine)) return true
+    cur = cur.parentElement
+  }
+  // (c) Class names that hint "old / was / crossed" — covers the common
+  //     framework patterns plus localized Russian "старая цена" classes.
+  cur = el
+  for (let i = 0; cur && i < 4; i++) {
+    const cls = (cur as HTMLElement).className
+    const classStr = typeof cls === 'string' ? cls : (cur as HTMLElement).getAttribute?.('class') ?? ''
+    if (typeof classStr === 'string' && OLD_PRICE_CLASS_RE.test(classStr)) return true
+    cur = cur.parentElement
+  }
+  return false
 }
 
 function collectTextFallbackCandidates(root: ParentNode, maxCount = 500): Element[] {
@@ -237,6 +317,16 @@ function ensureStyles() {
   vertical-align:middle;
   box-shadow:0 1px 0 rgba(255,255,255,.4) inset, 0 1px 4px rgba(17,24,39,.18);
 }
+.bb-inline-card[data-bb-strategy="block-below"]{
+  display:block !important;
+  margin-left:0;
+  margin-top:.25em;
+  width:max-content !important;
+}
+.bb-inline-card[data-bb-strategy="prepend"]{
+  margin-left:0;
+  margin-right:.45em;
+}
 `
   document.documentElement.appendChild(style)
 }
@@ -260,9 +350,20 @@ function renderInline(el: Element, text: string) {
   const host = el as HTMLElement
   if (!host.dataset.bbHostId) host.dataset.bbHostId = `bb-${++badgeCounter}`
   const hostId = host.dataset.bbHostId
+  const strategy = settings
+    ? resolveVisualSettingsForHost(settings, location.hostname).rule?.badgeStrategy ?? 'inline'
+    : 'inline'
+
+  // Tooltip strategy: don't draw a visible badge at all, just attach title=.
+  if (strategy === 'tooltip') {
+    host.setAttribute('title', text)
+    return
+  }
+
   const existing = host.parentElement?.querySelector(`.bb-inline-card[data-bb-for="${hostId}"]`) ?? null
   if (existing) {
     ;(existing as HTMLElement).textContent = text
+    ;(existing as HTMLElement).setAttribute('data-bb-strategy', strategy)
     return
   }
   const span = document.createElement('span')
@@ -270,15 +371,38 @@ function renderInline(el: Element, text: string) {
   span.textContent = text
   span.setAttribute('data-bb-badge', '1')
   span.setAttribute('data-bb-for', hostId)
-  el.insertAdjacentElement('afterend', span)
+  span.setAttribute('data-bb-strategy', strategy)
+
+  if (strategy === 'prepend') {
+    el.insertAdjacentElement('beforebegin', span)
+  } else {
+    // 'inline' and 'block-below' both mount after the price; CSS handles layout.
+    el.insertAdjacentElement('afterend', span)
+  }
 }
 
-function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
+function applyToElement(el: Element, forceAssumeByn: boolean, priceRange: PriceRange): number | null {
   if (!settings || !rates) return null
   if (PROCESSED.has(el)) return null
   if (!isVisibleElement(el)) return null
   if ((el as HTMLElement).dataset.bbBadge === '1') return null
   if (el.closest('[data-bb-badge="1"]')) return null
+
+  // Don't touch obvious foreign-currency cells (kufar dollar listings, RUB
+  // marketplaces, etc.). Markers must be unambiguous (€, $, ₽, USD…); the
+  // parser handles inline ones, this catches DOM-context ones.
+  if (hasNearbyNonBynMarker(el)) return null
+
+  // Skip the old / crossed-out price so we don't render a long "X · ≈ Y"
+  // string that pushes the badge off-screen on narrow listings.
+  if (isCrossedOutOrOldPrice(el)) return null
+
+  // Installment / monthly-payment cells: parsing the small per-month figure as
+  // BYN and converting yields nonsense ("≈ \$0.85" next to a 2.38 р/мес label).
+  // Probe the local slice first (own + parent) — going wider would catch the
+  // "в рассрочку" copy that appears far above genuine prices.
+  const installmentText = `${textExcludingBadges(el)} ${textExcludingBadges(el.parentElement)}`
+  if (looksLikeInstallment(installmentText)) return null
 
   const splitVariant = extractSplitPriceVariant(el) ?? extractSiblingMinorVariant(el)
   let textVariants = extractTextVariants(el).filter(isLikelyPriceToken)
@@ -305,8 +429,9 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
     if (!candidate && (hasHint || (forceAssumeByn && isSafeAssumeBynToken(rawText)))) {
       candidate = parseBynPrice(rawText, { assumeByn: true })
     }
-    // Skip tiny/placeholder values (e.g. "$0") and impossible outliers.
-    if (candidate && candidate.byn >= 1 && candidate.byn <= 1_000_000) {
+    // Per-host range. Defaults are wide enough for av.by / realt.by but
+    // still drop placeholder-zero and impossibly large values.
+    if (candidate && candidate.byn >= priceRange.min && candidate.byn <= priceRange.max) {
       parsedCandidates.push(candidate.byn)
       if (splitVariant && rawText === splitVariant) splitCandidate = candidate.byn
     }
@@ -344,22 +469,52 @@ function applyToElement(el: Element, forceAssumeByn: boolean): number | null {
   return parsedByn
 }
 
+function elementMatchesAny(el: Element, selectors: string[] | undefined): boolean {
+  if (!selectors || selectors.length === 0) return false
+  for (const sel of selectors) {
+    try {
+      if (el.matches(sel) || el.closest(sel)) return true
+    } catch {
+      // ignore invalid CSS — user-supplied selectors might be malformed
+    }
+  }
+  return false
+}
+
 function scan(root: ParentNode) {
   if (!settings || !settings.enabled) return
   const preset = getPresetForLocation(location)
+  const userRule: UserSiteRule | null = settings ? getUserRuleForHost(settings, location.hostname) : null
+
+  // Trust the page's own declaration over any preset / heuristic. If the site
+  // explicitly says "priceCurrency: USD" we have no business converting; if it
+  // says BYN we can safely force-assume even when the inline glyph is absent.
+  const declaredCurrency = detectDeclaredPageCurrency(root)
+  if (declaredCurrency && declaredCurrency !== 'BYN' && declaredCurrency !== 'BYR') {
+    return
+  }
+  const declaredByn = declaredCurrency === 'BYN' || declaredCurrency === 'BYR'
+
   const forceAssumeByn =
+    declaredByn ||
+    preset?.forceAssumeByn === true ||
     preset?.id === 'onliner' ||
     preset?.id === 'shop' ||
     preset?.id === '21vek' ||
     preset?.id === '7745' ||
     preset?.id === 'newton'
+  const priceRange = preset?.priceRange ?? DEFAULT_PRICE_RANGE
   ensureStyles()
   applyVisualSettings()
 
-  const selectors = preset?.priceSelectors ?? []
+  const selectors = [...(preset?.priceSelectors ?? []), ...(userRule?.currentPrice ?? []), ...(userRule?.productPrice ?? [])]
   const candidateSet = new Set<Element>()
   for (const sel of selectors) {
-    root.querySelectorAll(sel).forEach((el) => candidateSet.add(el))
+    try {
+      root.querySelectorAll(sel).forEach((el) => candidateSet.add(el))
+    } catch {
+      // ignore malformed user-supplied selectors
+    }
   }
   for (const el of collectTextFallbackCandidates(root)) {
     candidateSet.add(el)
@@ -371,7 +526,10 @@ function scan(root: ParentNode) {
   const trackedPrimaryValues: number[] = []
   for (const el of leafCandidates) {
     if (preset?.excludeSelectors?.some((sel) => el.closest(sel))) continue
-    const byn = applyToElement(el, forceAssumeByn)
+    if (elementMatchesAny(el, userRule?.notAPrice)) continue
+    if (elementMatchesAny(el, userRule?.oldPrice)) continue
+    if (elementMatchesAny(el, userRule?.installment)) continue
+    const byn = applyToElement(el, forceAssumeByn, priceRange)
     if (byn != null) {
       trackedBynValues.push(byn)
       const isPrimary = (preset?.trackerPrimarySelectors ?? []).some((sel) => {
@@ -386,14 +544,67 @@ function scan(root: ParentNode) {
   }
 
   // Track one representative price per scan and suppress obvious outliers.
-  const pool = trackedPrimaryValues.length > 0 ? trackedPrimaryValues : trackedBynValues
-  if (pool.length > 0) {
-    pool.sort((a, b) => a - b)
-    let representative = pool[pool.length - 1]
-    if (pool.length >= 2) {
-      const second = pool[pool.length - 2]
-      if (representative > second * 10) representative = second
+  // Order of preference:
+  //   1. preset.productPriceSelector matching exactly one node — that's the
+  //      canonical "current" price on a product page, no guesswork required.
+  //   2. preset.trackerPrimarySelectors (a small whitelist) when the preset
+  //      provides any.
+  //   3. All parsed prices on the page, after a median-based outlier cut.
+  //
+  // Recording is also gated by isProductPage: on listings / search results
+  // there is no single "this product's price" to track and any guess is a
+  // future bug report.
+  const isProductPage = preset?.isProductPage ? preset.isProductPage(location) : true
+  let representative: number | null = null
+
+  // User-pinned product price wins over the preset's productPriceSelector.
+  const productSelector =
+    (userRule?.productPrice && userRule.productPrice.length > 0
+      ? userRule.productPrice.join(', ')
+      : null) ?? preset?.productPriceSelector
+
+  if (isProductPage && productSelector) {
+    let matches: NodeListOf<Element> | null = null
+    try {
+      matches = root.querySelectorAll<Element>(productSelector)
+    } catch {
+      matches = null
     }
+    if (matches && matches.length === 1) {
+      const sole = matches[0]
+      const text = textExcludingBadges(sole)
+      const parsed =
+        parseBynPrice(text) ??
+        (forceAssumeByn || isSafeAssumeBynToken(text) ? parseBynPrice(text, { assumeByn: true }) : null)
+      if (
+        parsed &&
+        Number.isFinite(parsed.byn) &&
+        parsed.byn >= priceRange.min &&
+        parsed.byn <= priceRange.max
+      ) {
+        representative = parsed.byn
+      }
+    }
+  }
+
+  if (representative == null && isProductPage) {
+    const pool = trackedPrimaryValues.length > 0 ? trackedPrimaryValues : trackedBynValues
+    if (pool.length > 0) {
+      const sorted = [...pool].sort((a, b) => a - b)
+      const median = sorted[Math.floor(sorted.length / 2)] ?? 0
+      const outlierCutoff = median > 0 ? median * 50 : Number.POSITIVE_INFINITY
+      const filtered = sorted.filter((v) => v <= outlierCutoff)
+      const candidates = filtered.length > 0 ? filtered : sorted
+      let r = candidates[candidates.length - 1]
+      if (candidates.length >= 2) {
+        const second = candidates[candidates.length - 2]
+        if (r > second * 10) r = second
+      }
+      representative = r
+    }
+  }
+
+  if (representative != null) {
     void recordPricePoint(location.href, document.title, representative)
   }
 }
@@ -476,6 +687,38 @@ async function init() {
     }
   })
 }
+
+type PickerRole = 'currentPrice' | 'productPrice' | 'oldPrice' | 'installment' | 'notAPrice'
+
+async function applyPickedSelector(role: PickerRole, selector: string): Promise<void> {
+  const s = await getSettings()
+  const host = location.hostname.toLowerCase()
+  const nextRules = upsertUserSiteRule(s.userSiteRules ?? [], host, (existing) => {
+    return { ...existing, [role]: pushSelector(existing[role], selector) }
+  })
+  await setSettings({ ...s, userSiteRules: nextRules })
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // Only respond to messages from our own extension (popup / options).
+  if (sender.id && sender.id !== chrome.runtime.id) return
+  if (typeof msg !== 'object' || msg == null) return
+  const m = msg as { type?: string; role?: PickerRole }
+  if (m.type === 'bb_start_picker' && m.role) {
+    const role = m.role
+    const started = startPicker((result) => {
+      if (!result) return
+      void applyPickedSelector(role, result.selector).then(() => {
+        // Repaint immediately so the user sees the effect of their selection.
+        resetRenderedBadges()
+        scan(document)
+      })
+    })
+    sendResponse({ ok: started })
+    return true
+  }
+  return undefined
+})
 
 void init()
 

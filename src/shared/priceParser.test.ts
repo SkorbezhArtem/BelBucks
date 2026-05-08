@@ -30,5 +30,38 @@ describe('parseBynPrice', () => {
   it('parses "бел. р." hint', () => {
     expect(parseBynPrice('1635,25 бел. р.')?.byn).toBeCloseTo(1635.25, 6)
   })
+
+  describe('non-BYN markers', () => {
+    it('refuses dollar prices', () => {
+      expect(parseBynPrice('$60')).toBeNull()
+      expect(parseBynPrice('60 USD')).toBeNull()
+      expect(parseBynPrice('4.26 $')).toBeNull()
+      expect(parseBynPrice('$60', { assumeByn: true })).toBeNull()
+    })
+
+    it('refuses euro prices', () => {
+      expect(parseBynPrice('€499')).toBeNull()
+      expect(parseBynPrice('499 EUR')).toBeNull()
+      expect(parseBynPrice('499 евро')).toBeNull()
+    })
+
+    it('refuses Russian ruble explicit markers', () => {
+      expect(parseBynPrice('200 ₽')).toBeNull()
+      expect(parseBynPrice('200 RUB')).toBeNull()
+      expect(parseBynPrice('200 рос. руб.')).toBeNull()
+    })
+
+    it('refuses zloty / hryvnia / pound / yen', () => {
+      expect(parseBynPrice('120 zł')).toBeNull()
+      expect(parseBynPrice('120 PLN')).toBeNull()
+      expect(parseBynPrice('500 ₴')).toBeNull()
+      expect(parseBynPrice('£25')).toBeNull()
+      expect(parseBynPrice('¥1000')).toBeNull()
+    })
+
+    it('does NOT refuse ambiguous "р." (kept for context-aware decision)', () => {
+      expect(parseBynPrice('150 р.')?.byn).toBe(150)
+    })
+  })
 })
 
