@@ -381,7 +381,12 @@ function renderInline(el: Element, text: string) {
   }
 }
 
-function applyToElement(el: Element, forceAssumeByn: boolean, priceRange: PriceRange): number | null {
+function applyToElement(
+  el: Element,
+  forceAssumeByn: boolean,
+  priceRange: PriceRange,
+  userPositive = false,
+): number | null {
   if (!settings || !rates) return null
   if (PROCESSED.has(el)) return null
   if (!isVisibleElement(el)) return null
@@ -390,8 +395,10 @@ function applyToElement(el: Element, forceAssumeByn: boolean, priceRange: PriceR
 
   // Don't touch obvious foreign-currency cells (kufar dollar listings, RUB
   // marketplaces, etc.). Markers must be unambiguous (€, $, ₽, USD…); the
-  // parser handles inline ones, this catches DOM-context ones.
-  if (hasNearbyNonBynMarker(el)) return null
+  // parser handles inline ones, this catches DOM-context ones. The user's
+  // explicit picker action overrides this — they have already declared
+  // "this is a BYN price on this site".
+  if (!userPositive && hasNearbyNonBynMarker(el)) return null
 
   // Skip the old / crossed-out price so we don't render a long "X · ≈ Y"
   // string that pushes the badge off-screen on narrow listings.
@@ -426,7 +433,10 @@ function applyToElement(el: Element, forceAssumeByn: boolean, priceRange: PriceR
     if (isMinorOnlyFragment(rawText) && rawText !== splitVariant) continue
     const hasHint = hasCurrencyHint(rawText) || hasNearbyCurrencyHint(el)
     let candidate = parseBynPrice(rawText)
-    if (!candidate && (hasHint || (forceAssumeByn && isSafeAssumeBynToken(rawText)))) {
+    // userPositive bypasses isSafeAssumeBynToken / forceAssumeByn gates: the
+    // user has explicitly tagged this element as a price slot, so a bare
+    // "2 990" without a currency glyph next to it is still a price for them.
+    if (!candidate && (hasHint || userPositive || (forceAssumeByn && isSafeAssumeBynToken(rawText)))) {
       candidate = parseBynPrice(rawText, { assumeByn: true })
     }
     // Per-host range. Defaults are wide enough for av.by / realt.by but
@@ -507,11 +517,23 @@ function scan(root: ParentNode) {
   ensureStyles()
   applyVisualSettings()
 
-  const selectors = [...(preset?.priceSelectors ?? []), ...(userRule?.currentPrice ?? []), ...(userRule?.productPrice ?? [])]
+  const userPositiveSelectors = [...(userRule?.currentPrice ?? []), ...(userRule?.productPrice ?? [])]
+  const selectors = [...(preset?.priceSelectors ?? []), ...userPositiveSelectors]
   const candidateSet = new Set<Element>()
+  const userPositiveNodes = new Set<Element>()
   for (const sel of selectors) {
     try {
       root.querySelectorAll(sel).forEach((el) => candidateSet.add(el))
+    } catch {
+      // ignore malformed user-supplied selectors
+    }
+  }
+  // Track which nodes were matched specifically by user-pinned selectors so we
+  // can pass the trust signal to applyToElement and bypass heuristics that
+  // would otherwise silently reject the picked element on unknown hosts.
+  for (const sel of userPositiveSelectors) {
+    try {
+      root.querySelectorAll(sel).forEach((el) => userPositiveNodes.add(el))
     } catch {
       // ignore malformed user-supplied selectors
     }
@@ -521,7 +543,13 @@ function scan(root: ParentNode) {
   }
 
   const candidates = Array.from(candidateSet)
-  const leafCandidates = candidates.filter((el) => !candidates.some((other) => other !== el && el.contains(other)))
+  const leafCandidates = candidates.filter((el) => {
+    // Keep user-pinned nodes even when an inner candidate exists — otherwise
+    // text-fallback grabs a child of the picked wrapper and silently shadows
+    // the explicit user selection.
+    if (userPositiveNodes.has(el)) return true
+    return !candidates.some((other) => other !== el && el.contains(other))
+  })
   const trackedBynValues: number[] = []
   const trackedPrimaryValues: number[] = []
   for (const el of leafCandidates) {
@@ -529,16 +557,19 @@ function scan(root: ParentNode) {
     if (elementMatchesAny(el, userRule?.notAPrice)) continue
     if (elementMatchesAny(el, userRule?.oldPrice)) continue
     if (elementMatchesAny(el, userRule?.installment)) continue
-    const byn = applyToElement(el, forceAssumeByn, priceRange)
+    const isUserPositive = userPositiveNodes.has(el) || elementMatchesAny(el, userPositiveSelectors)
+    const byn = applyToElement(el, forceAssumeByn, priceRange, isUserPositive)
     if (byn != null) {
       trackedBynValues.push(byn)
-      const isPrimary = (preset?.trackerPrimarySelectors ?? []).some((sel) => {
-        try {
-          return el.matches(sel) || !!el.closest(sel)
-        } catch {
-          return false
-        }
-      })
+      const isPrimary =
+        isUserPositive ||
+        (preset?.trackerPrimarySelectors ?? []).some((sel) => {
+          try {
+            return el.matches(sel) || !!el.closest(sel)
+          } catch {
+            return false
+          }
+        })
       if (isPrimary) trackedPrimaryValues.push(byn)
     }
   }
@@ -558,10 +589,10 @@ function scan(root: ParentNode) {
   let representative: number | null = null
 
   // User-pinned product price wins over the preset's productPriceSelector.
-  const productSelector =
-    (userRule?.productPrice && userRule.productPrice.length > 0
-      ? userRule.productPrice.join(', ')
-      : null) ?? preset?.productPriceSelector
+  const userHasProductPrice = !!(userRule?.productPrice && userRule.productPrice.length > 0)
+  const productSelector = userHasProductPrice
+    ? userRule!.productPrice!.join(', ')
+    : preset?.productPriceSelector
 
   if (isProductPage && productSelector) {
     let matches: NodeListOf<Element> | null = null
@@ -573,9 +604,14 @@ function scan(root: ParentNode) {
     if (matches && matches.length === 1) {
       const sole = matches[0]
       const text = textExcludingBadges(sole)
+      // userHasProductPrice is the same trust signal as userPositive in
+      // applyToElement: the user has explicitly pinned this slot as the
+      // canonical product price, so we can assume BYN even without a glyph.
       const parsed =
         parseBynPrice(text) ??
-        (forceAssumeByn || isSafeAssumeBynToken(text) ? parseBynPrice(text, { assumeByn: true }) : null)
+        (forceAssumeByn || userHasProductPrice || isSafeAssumeBynToken(text)
+          ? parseBynPrice(text, { assumeByn: true })
+          : null)
       if (
         parsed &&
         Number.isFinite(parsed.byn) &&
