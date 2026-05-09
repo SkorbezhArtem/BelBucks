@@ -1041,13 +1041,54 @@ input[type="range"]::-moz-range-thumb {
 
 /* =========================================================================
    Popup
+
+   The popup is rendered as a single 340px glass panel with the aurora
+   gradient laid out *inside* it. We deliberately avoid stacking individual
+   sections with their own opaque surfaces — that creates a visible seam at
+   each section boundary because every section paints its own backdrop-filter
+   slab. Instead, sections inside `.bb-popup` are transparent and separated
+   by a single hairline divider drawn with a top border in --bb-stroke.
    ========================================================================= */
 
 .bb-popup {
   width: 340px;
-  padding: 14px;
+  padding: var(--bb-space-4) var(--bb-space-4) var(--bb-space-3);
   display: grid;
-  gap: 10px;
+  gap: var(--bb-space-3);
+  position: relative;
+  background: var(--bb-aurora), var(--bb-bg);
+  color: var(--bb-text);
+  isolation: isolate;
+}
+
+.bb-popup > .bb-section {
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  padding: var(--bb-space-3) 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  margin: 0;
+  position: relative;
+}
+
+/* Divider between adjacent sections — a single 1-px line that does not
+   reset the glass surface, so the aurora flows continuously behind. */
+.bb-popup > .bb-section + .bb-section {
+  margin-top: 0;
+  border-top: 1px solid var(--bb-stroke);
+}
+
+/* Banner / tracker / empty-state cards keep their own contained surface
+   inside the popup so they read as actionable, but they live INSIDE a
+   section so they don't break the aurora flow on their own. */
+.bb-popup > .bb-banner {
+  margin: 0;
+}
+
+.bb-popup__header {
+  padding: 0;
 }
 
 .bb-popup-controls {
