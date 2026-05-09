@@ -192,10 +192,64 @@ function collectTextFallbackCandidates(root: ParentNode, maxCount = 500): Elemen
   return out
 }
 
+/**
+ * Walk descendants of `root`, dropping text that lives inside a crossed-out
+ * subtree (`<s>`, `<del>`, `<strike>`, `text-decoration: line-through`, or
+ * a class like `*old*price*`). This is what we want when the user pickers a
+ * parent wrapper that contains BOTH the old (crossed) and the current price —
+ * without this filter, parseBynPrice's "right-most byn-marker" heuristic still
+ * works, but we'd also feed garbage variants into the candidate pool.
+ */
+function textExcludingCrossedOut(root: Element): string {
+  if (isCrossedOutOrOldPrice(root)) return ''
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let p: Node | null = node.parentNode
+      while (p && p !== root) {
+        if (p.nodeType === Node.ELEMENT_NODE) {
+          const el = p as Element
+          if (el.tagName === 'S' || el.tagName === 'DEL' || el.tagName === 'STRIKE') {
+            return NodeFilter.FILTER_REJECT
+          }
+          const cls = (el as HTMLElement).className
+          const classStr =
+            typeof cls === 'string' ? cls : el.getAttribute?.('class') ?? ''
+          if (typeof classStr === 'string' && OLD_PRICE_CLASS_RE.test(classStr)) {
+            return NodeFilter.FILTER_REJECT
+          }
+          // Cheap inline-style check; full getComputedStyle would be too slow
+          // for every text node on every scan.
+          const inline = (el as HTMLElement).style?.textDecorationLine ?? ''
+          if (typeof inline === 'string' && /line-through/.test(inline)) {
+            return NodeFilter.FILTER_REJECT
+          }
+        }
+        p = p.parentNode
+      }
+      return NodeFilter.FILTER_ACCEPT
+    },
+  })
+  const parts: string[] = []
+  let n: Node | null = walker.nextNode()
+  while (n) {
+    parts.push(n.textContent ?? '')
+    n = walker.nextNode()
+  }
+  return parts.join(' ')
+}
+
 function extractTextVariants(el: Element): string[] {
   const variants = new Set<string>()
+  // Whole-element text WITH crossed-out children dropped — this is the
+  // primary variant we want parseBynPrice to consume on user-picked wrappers.
+  const cleaned = textExcludingCrossedOut(el).replace(/\s+/g, ' ').trim()
+  if (cleaned) variants.add(cleaned)
+
+  // Raw textContent as a backup variant — keeps existing behaviour for cases
+  // where the crossed-out subtree IS the price (e.g. on listing tiles where
+  // a single <s> wraps the only price node).
   const own = (el.textContent ?? '').replace(/\s+/g, ' ').trim()
-  if (own) variants.add(own)
+  if (own && own !== cleaned) variants.add(own)
 
   for (const node of Array.from(el.childNodes)) {
     if (node.nodeType !== Node.TEXT_NODE) continue
