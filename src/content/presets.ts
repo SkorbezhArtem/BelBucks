@@ -469,6 +469,69 @@ const PRESETS: SitePreset[] = [
     isProductPage: (loc) => /\/object|\/announcement/i.test(loc.pathname),
     priceRange: { min: 1, max: 100_000_000 },
   },
+  {
+    // FK.by — мебельная фабрика. Markup splits the price into a major span
+    // ("2 100 руб.") and a minor span ("99 коп.") right next to it. Without
+    // anchoring, the parser sees "99 коп." alone first and converts it as
+    // 0.99 BYN. We point the picker at the wrapping price box so both
+    // fragments end up in extractTextVariants together and parseBynPrice's
+    // rub+kop merger fires.
+    id: 'fk',
+    match: (loc) => /(^|\.)fk\.by$/i.test(loc.hostname),
+    priceSelectors: [
+      '.product-card__price',
+      '.product-price',
+      '.price-box',
+      '[class*="price__wrap" i]',
+      '[class*="price-block" i]',
+      '[class*="price" i]',
+    ],
+    excludeSelectors: [
+      '[class*="phone" i]',
+      '[class*="contact" i]',
+      '[class*="rating" i]',
+    ],
+    productPriceSelector: '.product-price, .product-card__price, .price-box, [class*="price-block" i]',
+    oldPriceSelectors: [
+      '[class*="old" i][class*="price" i]',
+      '[class*="price" i][class*="old" i]',
+      '.price--old',
+      's, del, strike',
+    ],
+    isProductPage: (loc) => /\/catalog\/.+\/[^/]+\/?$/i.test(loc.pathname),
+    forceAssumeByn: true,
+    priceRange: { min: 0.5, max: 1_000_000 },
+  },
+  {
+    // xcore.by — электроника. Markup pairs an old crossed-out price and the
+    // current price inside the same wrapper, both with "руб." markers. The
+    // visible (current) price is the right-most one in DOM order, so the
+    // parser's right-most-byn-marker rule picks it correctly. We still set
+    // oldPriceSelectors so the legacy code-path can also short-circuit.
+    id: 'xcore',
+    match: (loc) => /(^|\.)xcore\.by$/i.test(loc.hostname),
+    priceSelectors: [
+      '.product-price',
+      '.product__price',
+      '.price-current',
+      '.product-card__price',
+      '[class*="price__current" i]',
+      '[class*="price-current" i]',
+      '[class*="price" i]',
+    ],
+    excludeSelectors: ['[class*="phone" i]', '[class*="contact" i]', '[class*="rating" i]'],
+    productPriceSelector: '.product-price, .product__price, .price-current, [class*="price__current" i]',
+    oldPriceSelectors: [
+      '[class*="old" i][class*="price" i]',
+      '[class*="price" i][class*="old" i]',
+      '[class*="price__old" i]',
+      '.price--old',
+      's, del, strike',
+    ],
+    isProductPage: (loc) => /\/catalog\/.+\/[^/]+\/?$/i.test(loc.pathname) || /\/product\//i.test(loc.pathname),
+    forceAssumeByn: true,
+    priceRange: { min: 0.5, max: 1_000_000 },
+  },
 ]
 
 const GENERIC: SitePreset = {
