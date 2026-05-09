@@ -260,39 +260,70 @@ function extractTextVariants(el: Element): string[] {
   return Array.from(variants).filter((s) => s.length <= 80)
 }
 
+/**
+ * Build structural major/minor pair from local node sequence.
+ * Handles patterns like:
+ *   "451<sup>91</sup> бел. р."        → "451.91"
+ *   "$0<i>198</i><i>00</i>"            → "198.00"
+ *   "<span>4 048</span><sup>20</sup>"  → "4048.20"
+ *
+ * Pairing rule: only pair adjacent SIBLINGS within the same parent. We
+ * deliberately do NOT pair tokens across DOM levels — on xcore.by the current
+ * price is rendered as `<strong>4 048<sup>20</sup> руб.</strong>`, whose
+ * compacted textContent is "404820". If we paired the parent's "404820" with
+ * the descendant `<sup>`'s "20" we'd get a fake major "404820.20" and convert
+ * the price 100x off. Recursing into element children keeps the simple onliner
+ * `<span>451<sup>91</sup></span>` pattern working while avoiding that trap.
+ *
+ * Crossed-out subtrees (`<s>`, `<del>`, `<strike>`, `*old*price*`, inline
+ * `text-decoration: line-through`) are skipped wherever they appear so the
+ * old crossed-out price never participates in pair-building.
+ */
 function extractSplitPriceVariant(el: Element): string | null {
-  // Build structural major/minor pair from local node sequence.
-  // Handles patterns like: "451<sup>91</sup> бел. р." and "$0<i>198</i><i>00</i>".
-  const tokens: string[] = []
-  for (const node of Array.from(el.childNodes)) {
-    const raw =
-      node.nodeType === Node.TEXT_NODE ? node.textContent ?? '' : node.nodeType === Node.ELEMENT_NODE ? node.textContent ?? '' : ''
-    const t = raw.replace(/\s+/g, '').replace(/[^\d]/g, '')
-    if (t) tokens.push(t)
-  }
-
-  // Fallback: some product pages nest integer/fractional parts in spans.
-  if (tokens.length < 2) {
-    const nested = Array.from(el.querySelectorAll('i, sup, sub, span, b, strong'))
-      .map((n) => (n.textContent ?? '').replace(/\s+/g, '').replace(/[^\d]/g, ''))
-      .filter(Boolean)
-    tokens.push(...nested)
-  }
-  if (tokens.length < 2) return null
+  if (isCrossedOutOrOldPrice(el)) return null
 
   const candidates: string[] = []
-  for (let i = 0; i < tokens.length - 1; i++) {
-    const major = tokens[i] ?? ''
-    const minor = tokens[i + 1] ?? ''
-    if (!/^\d{1,6}$/.test(major)) continue
-    if (!/^\d{1,2}$/.test(minor)) continue
-    if (major === '0') continue
-    candidates.push(`${major}.${minor.padEnd(2, '0').slice(0, 2)}`)
-  }
+  collectSplitCandidates(el, candidates)
   if (candidates.length === 0) return null
-  // Prefer the largest major part as likely "current price" over old/discount fragments.
+
+  // Prefer the largest major part — on listings with several stray fragments
+  // the genuine price tends to dominate, and old / discount-from numbers are
+  // already filtered by the crossed-out check.
   candidates.sort((a, b) => Number(b.split('.')[0]) - Number(a.split('.')[0]))
   return candidates[0] ?? null
+}
+
+function collectSplitCandidates(el: Element, out: string[]): void {
+  // Direct sibling pair pass on this element's own children.
+  const childNodes = Array.from(el.childNodes).filter((n) => {
+    if (n.nodeType !== Node.ELEMENT_NODE) return true
+    return !isCrossedOutOrOldPrice(n as Element)
+  })
+
+  for (let i = 0; i < childNodes.length - 1; i++) {
+    const a = childNodes[i]
+    const b = childNodes[i + 1]
+    if (!a || !b) continue
+    const aText = nodeDigits(a)
+    const bText = nodeDigits(b)
+    if (!aText || !bText) continue
+    if (!/^\d{1,6}$/.test(aText)) continue
+    if (!/^\d{1,2}$/.test(bText)) continue
+    if (aText === '0') continue
+    out.push(`${aText}.${bText.padEnd(2, '0').slice(0, 2)}`)
+  }
+
+  // Recurse into element children so a wrapper containing a crossed-out
+  // <s> + a current-price <strong> still resolves to the current price.
+  for (const child of Array.from(el.children)) {
+    if (isCrossedOutOrOldPrice(child)) continue
+    collectSplitCandidates(child, out)
+  }
+}
+
+function nodeDigits(node: Node): string {
+  const raw = node.textContent ?? ''
+  return raw.replace(/\s+/g, '').replace(/[^\d]/g, '')
 }
 
 function extractSiblingMinorVariant(el: Element): string | null {
