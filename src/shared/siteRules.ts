@@ -8,6 +8,43 @@ export function normalizePattern(pattern: string): string {
   return pattern.trim().toLowerCase()
 }
 
+/**
+ * Normalize free-form user input from the "Add rule" / "Quick check" fields
+ * into the canonical form the matcher expects.
+ *
+ * Accepted shapes:
+ *   "https://kwork.ru/path?x=1"      → "kwork.ru"
+ *   "http://www.onliner.by"           → "onliner.by"
+ *   "WWW.Catalog.Onliner.BY/some/p"   → "catalog.onliner.by"
+ *   "kwork.ru"                        → "kwork.ru"   (unchanged)
+ *   "*.onliner.by"                    → "*.onliner.by" (wildcard preserved)
+ *   "   "                             → ""
+ *
+ * Anything we can't parse falls back to the lowercased trimmed input —
+ * that keeps custom patterns like "*.foo.com" or ad-hoc test strings
+ * working without forcing the user to learn URL syntax.
+ */
+export function normalizeUserHostInput(input: string): string {
+  const raw = input.trim().toLowerCase()
+  if (!raw) return ''
+  // Wildcard patterns are kept verbatim — they're meant to be sub-domain globs.
+  if (raw.startsWith('*.')) return raw
+  // Strip everything after the first '/' or '?' or '#' so that pasting a full
+  // page URL still yields a hostname.
+  const candidate = raw
+    .replace(/^[a-z][a-z0-9+\-.]*:\/\//, '')
+    .replace(/^\/\//, '')
+    .split(/[\/?#]/, 1)[0]
+    ?.replace(/^www\./, '')
+    ?.replace(/:\d+$/, '')
+  if (!candidate) return raw
+  // If the candidate doesn't look like a hostname at all (no dot, no letters),
+  // fall back to the raw input — better to save something the user typed than
+  // to silently swallow it.
+  if (!/[a-z0-9-]/.test(candidate)) return raw
+  return candidate
+}
+
 export function matchesHost(pattern: string, host: string): boolean {
   const p = normalizePattern(pattern)
   const h = normalizeHost(host)
