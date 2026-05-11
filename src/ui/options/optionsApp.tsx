@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DEFAULT_SETTINGS, getSettings, setSettings } from '../../shared/storage'
-import { isEnabledForSite, removeRule, sortRulesForDisplay, upsertRule } from '../../shared/siteRules'
+import {
+  isEnabledForSite,
+  normalizeUserHostInput,
+  removeRule,
+  sortRulesForDisplay,
+  upsertRule,
+} from '../../shared/siteRules'
 import type {
   RateProvider,
   SiteVisualRule,
@@ -359,7 +365,7 @@ export function OptionsApp() {
                     className="bb-btn bb-btn--primary"
                     type="button"
                     onClick={() => {
-                      const base = newRulePattern.trim()
+                      const base = normalizeUserHostInput(newRulePattern)
                       if (!base) return
                       const pattern = newRuleWildcard
                         ? `*.${base.replace(/^\*\.\s*/, '')}`
@@ -374,6 +380,10 @@ export function OptionsApp() {
                     <IconPlus /> Добавить
                   </button>
                 </div>
+                <NormalizedHostHint
+                  raw={newRulePattern}
+                  wildcard={newRuleWildcard}
+                />
               </Section>
 
               <Section
@@ -479,7 +489,7 @@ export function OptionsApp() {
                     className="bb-btn bb-btn--primary"
                     type="button"
                     onClick={() => {
-                      const base = newVisualPattern.trim()
+                      const base = normalizeUserHostInput(newVisualPattern)
                       if (!base) return
                       const pattern = newVisualWildcard
                         ? `*.${base.replace(/^\*\.\s*/, '')}`
@@ -508,6 +518,10 @@ export function OptionsApp() {
                     <IconPlus /> Добавить
                   </button>
                 </div>
+                <NormalizedHostHint
+                  raw={newVisualPattern}
+                  wildcard={newVisualWildcard}
+                />
                 <div className="bb-row" style={{ gap: 8, flexWrap: 'wrap' }}>
                   <label
                     className="bb-row"
@@ -989,24 +1003,52 @@ function HostnameTester(props: {
   rules: UserSettings['siteRules']
 }) {
   const [host, setHost] = useState('catalog.onliner.by')
+  // The tester always evaluates against the *normalized* hostname so it
+  // behaves the same way the content-script does at scan time. Pasting a
+  // full URL here now resolves to the matching host, not a literal string.
+  const resolved = normalizeUserHostInput(host)
   const enabled = isEnabledForSite({
     enabledGlobal: props.enabledGlobal,
-    host,
+    host: resolved,
     defaultMode: props.defaultMode,
     rules: props.rules,
   })
 
   return (
-    <div className="bb-row" style={{ gap: 8 }}>
-      <input
-        value={host}
-        onChange={(e) => setHost(e.target.value)}
-        placeholder="example.com"
-        style={{ flex: 1, minWidth: 200 }}
-      />
-      <span className={`bb-pill ${enabled ? 'bb-pillAllow' : 'bb-pillBlock'}`}>
-        {enabled ? 'ENABLED' : 'DISABLED'}
-      </span>
+    <div style={{ display: 'grid', gap: 6 }}>
+      <div className="bb-row" style={{ gap: 8 }}>
+        <input
+          value={host}
+          onChange={(e) => setHost(e.target.value)}
+          placeholder="example.com"
+          style={{ flex: 1, minWidth: 200 }}
+        />
+        <span className={`bb-pill ${enabled ? 'bb-pillAllow' : 'bb-pillBlock'}`}>
+          {enabled ? 'ENABLED' : 'DISABLED'}
+        </span>
+      </div>
+      {resolved && resolved !== host.trim().toLowerCase() ? (
+        <div className="bb-muted" style={{ fontSize: 12 }}>
+          интерпретируется как <code>{resolved}</code>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Renders a small "будет сохранено как: <host>" hint below an "Add rule"
+ * input. Only shows up when normalization actually changes the user's input,
+ * so a clean "kwork.ru" doesn't get a redundant echo.
+ */
+function NormalizedHostHint(props: { raw: string; wildcard: boolean }) {
+  const base = normalizeUserHostInput(props.raw)
+  if (!base) return null
+  const final = props.wildcard ? `*.${base.replace(/^\*\.\s*/, '')}` : base
+  if (final === props.raw.trim().toLowerCase()) return null
+  return (
+    <div className="bb-muted" style={{ fontSize: 12, marginTop: 6 }}>
+      будет сохранено как <code>{final}</code>
     </div>
   )
 }
