@@ -4,7 +4,7 @@ import { detectDeclaredPageCurrency } from '../shared/jsonLdCurrency'
 import { parseBynPrice } from '../shared/priceParser'
 import { recordPricePoint } from '../shared/priceTracker'
 import { getRatesCache, getSettings, setSettings } from '../shared/storage'
-import { isEnabledForSite } from '../shared/siteRules'
+import { effectiveEnabledForSite } from '../shared/siteRules'
 import { resolveVisualSettingsForHost } from '../shared/siteVisual'
 import type { RatesCache, UserSettings, UserSiteRule } from '../shared/types'
 import { getUserRuleForHost, pushSelector, upsertUserSiteRule } from '../shared/userSiteRules'
@@ -369,7 +369,7 @@ function findPriceRenderAnchor(el: Element): Element {
 }
 
 function shouldRunOnHost(host: string, s: UserSettings): boolean {
-  return isEnabledForSite({
+  return effectiveEnabledForSite({
     enabledGlobal: s.enabled,
     host,
     defaultMode: s.siteDefaultMode,

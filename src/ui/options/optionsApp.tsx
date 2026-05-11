@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DEFAULT_SETTINGS, getSettings, setSettings } from '../../shared/storage'
 import {
-  isEnabledForSite,
+  effectiveEnabledForSite,
   normalizeUserHostInput,
   removeRule,
   sortRulesForDisplay,
   upsertRule,
 } from '../../shared/siteRules'
+import { isLikelyBynHost } from '../../shared/hostCurrencyHeuristic'
 import type {
   RateProvider,
   SiteVisualRule,
@@ -1007,12 +1008,16 @@ function HostnameTester(props: {
   // behaves the same way the content-script does at scan time. Pasting a
   // full URL here now resolves to the matching host, not a literal string.
   const resolved = normalizeUserHostInput(host)
-  const enabled = isEnabledForSite({
+  const enabled = effectiveEnabledForSite({
     enabledGlobal: props.enabledGlobal,
     host: resolved,
     defaultMode: props.defaultMode,
     rules: props.rules,
   })
+  // When a foreign TLD is gated by the heuristic and the user has no explicit
+  // rule for it, we want to be loud about WHY — otherwise it looks like the
+  // tester is bugged when someone types e.g. `kwork.ru` and gets DISABLED.
+  const looksForeign = resolved ? !isLikelyBynHost(resolved) : false
 
   return (
     <div style={{ display: 'grid', gap: 6 }}>
@@ -1030,6 +1035,13 @@ function HostnameTester(props: {
       {resolved && resolved !== host.trim().toLowerCase() ? (
         <div className="bb-muted" style={{ fontSize: 12 }}>
           интерпретируется как <code>{resolved}</code>
+        </div>
+      ) : null}
+      {looksForeign ? (
+        <div className="bb-muted" style={{ fontSize: 12 }}>
+          {!enabled
+            ? 'TLD не похож на BY — расширение здесь по умолчанию выключено. Чтобы заставить — добавь правило «Разрешить» выше.'
+            : 'TLD не похож на BY, но включено явным правилом.'}
         </div>
       ) : null}
     </div>

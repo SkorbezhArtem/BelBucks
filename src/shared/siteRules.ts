@@ -1,4 +1,5 @@
 import type { SiteDefaultMode, SiteRule } from './types'
+import { isLikelyBynHost } from './hostCurrencyHeuristic'
 
 export function normalizeHost(host: string): string {
   return host.trim().toLowerCase()
@@ -84,6 +85,39 @@ export function isEnabledForSite(params: {
 
   const rule = resolveSiteRule(params.rules, params.host)
   if (rule) return rule.mode === 'allow'
+
+  return params.defaultMode === 'enabledEverywhere'
+}
+
+/**
+ * Same as `isEnabledForSite` but additionally gates the result behind the
+ * host-level currency heuristic: if the host isn't `.by` (or in the BYN
+ * allowlist) AND the user hasn't explicitly added an allow rule, we treat the
+ * site as foreign and stay out of its way.
+ *
+ * Priority of signals:
+ *   1. `enabledGlobal === false`         → off
+ *   2. explicit user rule for this host  → that rule wins (block or allow)
+ *   3. host is `likely-byn`              → fall back to `defaultMode`
+ *   4. otherwise                         → off (foreign domain)
+ *
+ * This is the function the content-script / popup / hostname-tester should
+ * use. `isEnabledForSite` stays as the lower-level matcher and is kept
+ * unchanged so the existing rule-resolution tests don't have to bake in TLD
+ * knowledge.
+ */
+export function effectiveEnabledForSite(params: {
+  enabledGlobal: boolean
+  host: string
+  defaultMode: SiteDefaultMode
+  rules: SiteRule[]
+}): boolean {
+  if (!params.enabledGlobal) return false
+
+  const rule = resolveSiteRule(params.rules, params.host)
+  if (rule) return rule.mode === 'allow'
+
+  if (!isLikelyBynHost(params.host)) return false
 
   return params.defaultMode === 'enabledEverywhere'
 }

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { PriceHistoryEntry } from '../../shared/priceTracker'
 import { clearPriceHistoryForUrl, loadPriceHistory } from '../../shared/priceTracker'
 import { getRatesCache, getSettings, setSettings } from '../../shared/storage'
-import { isEnabledForSite, upsertHostRule } from '../../shared/siteRules'
+import { effectiveEnabledForSite, upsertHostRule } from '../../shared/siteRules'
+import { isGatedByCurrencyHeuristic } from '../../shared/hostCurrencyHeuristic'
 import type { RatesCache, RateProvider, TargetCurrency, UserSettings } from '../../shared/types'
 import { IconButton } from '../components/IconButton'
 import {
@@ -233,7 +234,7 @@ export function PopupApp() {
   const last = displayPoints.at(-1)
   const enabledForThisSite =
     settings && activeHost
-      ? isEnabledForSite({
+      ? effectiveEnabledForSite({
           enabledGlobal: settings.enabled,
           host: activeHost,
           defaultMode: settings.siteDefaultMode,
@@ -242,6 +243,14 @@ export function PopupApp() {
       : true
   const showTrackerBanner = !!settings && !settings.priceTrackerAcknowledged
   const trackerOn = !!settings?.priceTrackerEnabled
+  // `true` ⇔ user is on a non-`.by` host with no explicit rule. We surface a
+  // small "this site looks foreign, want to force-enable?" banner so it's
+  // obvious WHY the toggle below is off — otherwise users on e.g. kwork.ru
+  // think the extension is broken.
+  const heuristicGated =
+    !!settings && !!activeHost && settings.enabled
+      ? isGatedByCurrencyHeuristic({ host: activeHost, rules: settings.siteRules })
+      : false
 
   const liveRate = useMemo(() => {
     if (!settings || !rates) return null
@@ -350,6 +359,32 @@ export function PopupApp() {
               }
             >
               Не сейчас
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Foreign-domain notice */}
+      {heuristicGated && activeHost ? (
+        <div className="bb-banner" role="region" aria-label="Сайт не похож на BY">
+          <div className="bb-banner__title">
+            <IconTarget /> Этот сайт не похож на BY
+          </div>
+          <div className="bb-banner__desc">
+            Цены на <strong>{activeHost}</strong>, скорее всего, не в BYN, поэтому
+            расширение здесь по умолчанию выключено. Можно включить вручную, если
+            ты уверен, что сайт показывает белорусские рубли.
+          </div>
+          <div className="bb-banner__actions">
+            <button
+              className="bb-btn bb-btn--primary bb-btn--sm"
+              type="button"
+              onClick={() => {
+                const nextRules = upsertHostRule(settings.siteRules, activeHost, 'allow')
+                void save({ ...settings, siteRules: nextRules })
+              }}
+            >
+              Включить здесь
             </button>
           </div>
         </div>
