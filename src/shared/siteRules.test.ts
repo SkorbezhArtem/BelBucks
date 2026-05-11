@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  effectiveEnabledForSite,
   isEnabledForSite,
   matchesHost,
   normalizeUserHostInput,
@@ -83,5 +84,75 @@ describe('isEnabledForSite + normalizeUserHostInput integration', () => {
         rules,
       }),
     ).toBe(true)
+  })
+})
+
+describe('effectiveEnabledForSite', () => {
+  it('respects the global off switch above everything else', () => {
+    expect(
+      effectiveEnabledForSite({
+        enabledGlobal: false,
+        host: 'onliner.by',
+        defaultMode: 'enabledEverywhere',
+        rules: [{ pattern: 'onliner.by', mode: 'allow' }],
+      }),
+    ).toBe(false)
+  })
+
+  it('lets explicit allow rules override the TLD heuristic on foreign hosts', () => {
+    const rules: SiteRule[] = [{ pattern: 'kwork.ru', mode: 'allow' }]
+    expect(
+      effectiveEnabledForSite({
+        enabledGlobal: true,
+        host: 'kwork.ru',
+        defaultMode: 'enabledEverywhere',
+        rules,
+      }),
+    ).toBe(true)
+  })
+
+  it('lets explicit block rules win even on .by hosts', () => {
+    const rules: SiteRule[] = [{ pattern: 'onliner.by', mode: 'block' }]
+    expect(
+      effectiveEnabledForSite({
+        enabledGlobal: true,
+        host: 'onliner.by',
+        defaultMode: 'enabledEverywhere',
+        rules,
+      }),
+    ).toBe(false)
+  })
+
+  it('disables foreign hosts by default (the kwork.ru bug)', () => {
+    expect(
+      effectiveEnabledForSite({
+        enabledGlobal: true,
+        host: 'kwork.ru',
+        defaultMode: 'enabledEverywhere',
+        rules: [],
+      }),
+    ).toBe(false)
+  })
+
+  it('enables .by hosts when defaultMode is enabledEverywhere', () => {
+    expect(
+      effectiveEnabledForSite({
+        enabledGlobal: true,
+        host: 'catalog.onliner.by',
+        defaultMode: 'enabledEverywhere',
+        rules: [],
+      }),
+    ).toBe(true)
+  })
+
+  it('still respects defaultMode=disabledEverywhere on .by hosts', () => {
+    expect(
+      effectiveEnabledForSite({
+        enabledGlobal: true,
+        host: 'catalog.onliner.by',
+        defaultMode: 'disabledEverywhere',
+        rules: [],
+      }),
+    ).toBe(false)
   })
 })
